@@ -214,7 +214,10 @@ function findShaftCol(world: WorldState): number | null {
   const cpCol = world.checkpoint ? Math.floor(world.checkpoint.x / TILE) : -99;
   const lockCol = world.blocks.find((b) => b.type === 'lock')?.col ?? -99;
   const width = SHAFT_INNER + 2;
-  for (let c = from; c <= to; c++) {
+  const span = Math.max(1, to - from + 1);
+  const startOffset = Math.abs((world.levelIndex * 23 + world.totalCols * 7) % span);
+  for (let step = 0; step < span; step++) {
+    const c = from + ((startOffset + step) % span);
     if (Math.abs(c - lockCol) < 12) continue;
     let ok = true;
     for (let col = c - 1; col <= c + width && ok; col++) {

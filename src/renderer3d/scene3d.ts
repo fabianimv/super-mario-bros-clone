@@ -103,6 +103,7 @@ const ENEMY_COLORS: Record<string, string> = {
   rex: '#7c3aed',
   chuck: '#2563eb',
   bullet_bill: '#1f2937',
+  thief: '#a21caf',
 };
 
 /** Rampa de 3 tonos para el sombreado tipo cel (bandas duras de luz). */
@@ -525,6 +526,27 @@ export class World3DScene {
     for (const z of world.lowGravZones ?? []) {
       if (!inView(z.x0, z.x1 - z.x0)) continue;
       this.ghost.add(toX((z.x0 + z.x1) / 2), -6.5, 0, (z.x1 - z.x0) * U, 12, 3, '#a78bfa');
+    }
+
+    // --- Altares de apuesta (Mundo 6 Fortuna) ---
+    for (const a of world.wagerAltars ?? []) {
+      if (!inView(a.x, 24)) continue;
+      const x = toX(a.x + 12);
+      const y = toY(a.y + 15);
+      const orbY = toY(a.y + 2);
+      const pedestalColor = a.resolved ? (a.won ? '#4ade80' : '#ef4444') : '#f59e0b';
+      const orbColor = a.resolved ? (a.won ? '#bbf7d0' : '#fecaca') : '#fde68a';
+      this.cylinders.add(x, y, 0, 0.7, 0.6, 0.7, pedestalColor);
+      const pulse = a.resolved ? 0.35 : 0.35 + Math.sin(frame * 0.15 + a.id) * 0.08;
+      this.glowSpheres.add(x, orbY, 0.1, pulse, pulse, pulse, orbColor);
+    }
+
+    // --- Reflejo Eco (Mundo 8 Eco) ---
+    if (world.echo && inView(world.echo.x, 24)) {
+      const ex = toX(world.echo.x + 11);
+      const ey = toY(world.echo.y + 15);
+      this.ghost.add(ex, ey, 0, 0.8, 1.2, 0.6, '#99f6e4');
+      this.glowSpheres.add(ex, ey + 0.4, 0.1, 0.3, 0.3, 0.3, '#ccfbf1');
     }
 
     // --- Monedas ---

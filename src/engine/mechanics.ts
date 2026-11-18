@@ -270,12 +270,50 @@ export function applyStageMechanic(world: WorldState): WorldState {
       world.wagerAltars = [];
       const n = 4;
       const span = Math.max(1, world.totalCols - 40);
+      const offsets = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6];
       for (let i = 0; i < n; i++) {
-        const col = 20 + Math.floor((span * (i + 0.5)) / n);
+        const targetCol = 20 + Math.floor((span * (i + 0.5)) / n);
+        let chosenCol = targetCol;
+        let chosenY = GROUND_ROW * TILE - 30;
+
+        for (const dx of offsets) {
+          const c = targetCol + dx;
+          if (c < 5 || c > world.totalCols - 10) continue;
+          const x0 = c * TILE;
+          const x1 = (c + 1) * TILE;
+          const pipeClash = world.pipes.some((p) => p.x < x1 && p.x + p.width > x0);
+          if (pipeClash) continue;
+
+          // Suelo firme en GROUND_ROW sin lava ni muros en row 10..11
+          const hasGround = world.blockGrid.has(key(c, GROUND_ROW)) && !world.lavaCols.has(c);
+          const groundClear = !world.blockGrid.has(key(c, 10)) && !world.blockGrid.has(key(c, 11));
+          if (hasGround && groundClear) {
+            chosenCol = c;
+            chosenY = GROUND_ROW * TILE - 30;
+            break;
+          }
+
+          // O una repisa alta en row 7..9 con espacio libre encima
+          let shelfFound = false;
+          for (let r = 7; r <= 9; r++) {
+            if (
+              world.blockGrid.has(key(c, r)) &&
+              !world.blockGrid.has(key(c, r - 1)) &&
+              !world.blockGrid.has(key(c, r - 2))
+            ) {
+              chosenCol = c;
+              chosenY = r * TILE - 30;
+              shelfFound = true;
+              break;
+            }
+          }
+          if (shelfFound) break;
+        }
+
         world.wagerAltars.push({
           id: i + 1,
-          x: col * TILE,
-          y: GROUND_ROW * TILE - 30,
+          x: chosenCol * TILE,
+          y: chosenY,
           stake: 2,
           resolved: false,
           won: false,

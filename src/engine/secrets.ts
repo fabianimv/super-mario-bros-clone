@@ -64,7 +64,9 @@ function findVaultCol(world: WorldState): number | null {
   const from = Math.max(14, Math.floor(world.totalCols * 0.3));
   const to = world.totalCols - 30; // antes de la escalera final
   const cpCol = world.checkpoint ? Math.floor(world.checkpoint.x / TILE) : -99;
-  const mid = Math.floor((from + to) / 2);
+  const anchors = [0.34, 0.52, 0.68, 0.42];
+  const anchorFrac = anchors[(world.levelIndex * 3 + world.totalCols) % anchors.length];
+  const mid = Math.max(from, Math.min(to, Math.floor(world.totalCols * anchorFrac)));
   const order: number[] = [];
   for (let d = 0; d <= to - from; d++) {
     if (mid + d <= to) order.push(mid + d);
@@ -96,16 +98,19 @@ function findVaultCol(world: WorldState): number | null {
 
 /** El punto más alto (y escondido) antes de la bóveda para dejar la llave. */
 function findKeySpot(world: WorldState, beforeCol: number): { col: number; row: number } | null {
-  let best: { col: number; row: number } | null = null;
+  const candidates: { col: number; row: number }[] = [];
   for (const b of world.blocks) {
     if (b.type === 'hidden' || b.type === 'ground_top' || b.type === 'ground_deep') continue;
     if (b.row < 3 || b.row > 8 || b.col < 12 || b.col > beforeCol - 4) continue;
     if (world.blockGrid.has(key(b.col, b.row - 1)) || world.blockGrid.has(key(b.col, b.row - 2))) continue;
-    if (!best || b.row < best.row + 1 || (b.row - 1 === best.row && b.col > best.col)) {
-      best = { col: b.col, row: b.row - 1 };
-    }
+    candidates.push({ col: b.col, row: b.row - 1 });
   }
-  if (best) return best;
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => (a.row !== b.row ? a.row - b.row : a.col - b.col));
+    const topCandidates = candidates.slice(0, Math.min(3, candidates.length));
+    const pickIdx = Math.abs(world.levelIndex * 5 + beforeCol) % topCandidates.length;
+    return topCandidates[pickIdx];
+  }
   // Sin bloques altos: sobre la tubería más alta
   const pipes = world.pipes.filter((p) => p.x / TILE >= 12 && p.x / TILE < beforeCol - 4);
   if (pipes.length > 0) {
