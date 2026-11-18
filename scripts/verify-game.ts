@@ -776,6 +776,10 @@ const allSfx: SfxId[] = [
   'chase_growl',
   'lava_rise',
   'goal_locked',
+  'pipe_warp',
+  'gravity_flip',
+  'switch_toggle',
+  'arena_wave',
 ];
 const allBgm: BgmTrackId[] = [
   'overworld',

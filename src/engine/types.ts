@@ -1,4 +1,15 @@
-export type GamePartition = 'classic' | 'smw' | 'expedition' | 'frontier' | 'fortune' | 'mirage' | 'echo' | 'dimension';
+export type GamePartition =
+  | 'classic'
+  | 'smw'
+  | 'expedition'
+  | 'frontier'
+  | 'fortune'
+  | 'mirage'
+  | 'echo'
+  | 'dimension'
+  | 'tower'
+  | 'flip'
+  | 'star_road';
 
 export type BiomeId =
   | 'meadow'
@@ -87,7 +98,12 @@ export type SfxId =
   | 'clock'
   | 'chase_growl'
   | 'lava_rise'
-  | 'goal_locked';
+  | 'goal_locked'
+  // Tuberías secretas, gravedad, interruptores y arenas
+  | 'pipe_warp'
+  | 'gravity_flip'
+  | 'switch_toggle'
+  | 'arena_wave';
 
 export type HapticKind =
   | 'tick'
@@ -110,7 +126,8 @@ export type GameEvent =
       score: number;
       coins: number;
     }
-  | { type: 'game_over'; partition: GamePartition; score: number };
+  | { type: 'game_over'; partition: GamePartition; score: number }
+  | { type: 'secret_unlocked'; partition: GamePartition };
 
 export interface InputState {
   left: boolean;
@@ -135,7 +152,10 @@ export type BlockType =
   | 'empty'
   | 'hard'
   | 'bridge'
-  | 'lock'; // Puerta de bóveda: se abre con la llave (Fase 3)
+  | 'lock' // Puerta de bóveda: se abre con la llave (Fase 3)
+  | 'on_off_switch'
+  | 'on_block'
+  | 'off_block';
 
 export type BlockContent =
   | 'coin'
@@ -167,12 +187,34 @@ export interface Block {
   crumbleTimer?: number;
 }
 
+export type PipeWarpKind = 'subroom' | 'warp_zone' | 'secret_world' | 'return';
+export type PipeAccent = 'gold' | 'violet' | 'crimson' | 'emerald';
+export type SubroomTheme = 'coin_vault' | 'star_sanctuary' | 'cloud_heaven' | 'warp_chamber';
+
 export interface Pipe {
   x: number;
   y: number;
   width: number;
   height: number;
   hasPiranha: boolean;
+  /** Si está definido, apretar ▼ sobre esta tubería inicia transición 'pipe_enter'. */
+  warpKind?: PipeWarpKind;
+  /** Color de aro/brillo superior para distinguirla visualmente. */
+  warpAccent?: PipeAccent;
+  /** Etiqueta flotante ("▼ BONUS", "▼ WARP", "★ SECRETO", "MUNDO 3", "↩ SALIDA"). */
+  warpLabel?: string;
+  /** Tema de la sub-sala cuando warpKind === 'subroom' | 'warp_zone'. */
+  subroomTheme?: SubroomTheme;
+  /** Columna de la tubería de salida al volver al nivel principal. */
+  exitPipeCol?: number;
+  /** Nivel destino cuando warpKind === 'warp_zone' o 'secret_world'. */
+  warpTargetLevel?: number;
+  /** Partición destino cuando desbloquea/salta al mundo secreto ('star_road'). */
+  warpTargetPartition?: GamePartition;
+  /** En modo 'flip', índice en world.pipes del tubo hermano para teletransporte dentro de la sala. */
+  pairPipeIndex?: number;
+  /** Evita re-entrar infinitamente al mismo tubo bonus ya completado. */
+  visited?: boolean;
 }
 
 export interface MovingPlatform {
@@ -566,12 +608,69 @@ export type WorldStatus =
   | 'title'
   | 'stage_intro'
   | 'playing'
+  | 'pipe_enter'
+  | 'pipe_exit'
   | 'flagpole'
   | 'goal_tape'
   | 'boss_collapse'
   | 'dying'
   | 'gameover'
   | 'victory';
+
+export interface MainStageSnapshot {
+  worldLabel: string;
+  stageTitle: string;
+  biomeId: BiomeId;
+  totalCols: number;
+  worldRows?: number;
+  cameraX: number;
+  cameraY?: number;
+  blocks: Block[];
+  blockGrid: Map<number, Block>;
+  pipes: Pipe[];
+  platforms: MovingPlatform[];
+  springs: Spring[];
+  checkpoint: Checkpoint | null;
+  enemies: Enemy[];
+  boss: FortressBoss | null;
+  powerups: PowerupItem[];
+  yoshis: YoshiEntity[];
+  dragonCoins: DragonCoin[];
+  berries: BerryEntity[];
+  coinsList: CoinEntity[];
+  sceneries: SceneryProp[];
+  lavaCols: Set<number>;
+  flagpole: FlagpoleGoal | null;
+  goalTape: GoalTape | null;
+  mechanic?: StageMechanic;
+  wind?: WindState | null;
+  icicles?: Icicle[];
+  lowGravZones?: LowGravZone[];
+  crumbled?: CrumbledBlock[];
+  lavaTide?: boolean;
+  objective?: StageObjective;
+  pickups?: Pickup[];
+  gemsNeeded?: number;
+  gemsCollected?: number;
+  chase?: ChaseWall | null;
+  hasKey?: boolean;
+  vaultOpened?: boolean;
+  wagerAltars?: Array<{ id: number; x: number; y: number; stake: number; resolved: boolean; won: boolean }>;
+  fortuneTarget?: number;
+  recoverTarget?: number;
+  echo?: { x: number; y: number } | null;
+  echoTrail?: Array<{ x: number; y: number }>;
+  shafts?: Array<{ x: number; y: number; hinted: boolean }>;
+  exitX: number;
+  exitY: number;
+}
+
+export interface ArenaWaveState {
+  current: number;
+  total: number;
+  remaining: number;
+  cooldown: number;
+}
 
 export interface GameSettings {
   soundEnabled: boolean;
@@ -623,6 +722,23 @@ export interface SaveProgress {
   echoUnlockedLevel?: number;
   echoClearedLevels?: number[];
   echoBestStageScores?: Record<number, number>;
+  // Modo Torre (8 niveles verticales)
+  towerHighScore?: number;
+  towerUnlockedLevel?: number;
+  towerClearedLevels?: number[];
+  towerBestStageScores?: Record<number, number>;
+  // Modo Inverso / Flip (8 niveles)
+  flipHighScore?: number;
+  flipUnlockedLevel?: number;
+  flipClearedLevels?: number[];
+  flipBestStageScores?: Record<number, number>;
+  // Modo Senda Estelar (8 niveles)
+  starRoadHighScore?: number;
+  starRoadUnlockedLevel?: number;
+  starRoadClearedLevels?: number[];
+  starRoadBestStageScores?: Record<number, number>;
+  // Desbloqueo permanente de mundo secreto
+  secretUnlocked?: boolean;
   lastPartition: GamePartition;
 }
 
@@ -705,4 +821,17 @@ export interface WorldState {
   // Habilidades (Fase 4)
   wrench?: Wrench | null;
   shafts?: Array<{ x: number; y: number; hinted: boolean }>;
+  // Modos no-horizontales, sub-salas y tuberías secretas
+  worldRows?: number;
+  cameraY?: number;
+  gravityDir?: 1 | -1;
+  onOffState?: 'on' | 'off';
+  wrapHorizontal?: boolean;
+  risingHazardY?: number | null;
+  risingHazardSpeed?: number;
+  subArea?: 'subroom' | 'warp_zone' | null;
+  returnSnapshot?: MainStageSnapshot | null;
+  activeWarpPipe?: Pipe | null;
+  cameraMode?: 'side' | 'corridor3d';
+  arenaWave?: ArenaWaveState | null;
 }

@@ -274,7 +274,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         if (distSpin <= auxHalo) {
           next.spin = true;
           next.run = true;
-          if (partition !== 'smw') {
+          if (partition !== 'smw' && partition !== 'flip') {
             next.fire = true;
           }
         }
@@ -319,6 +319,8 @@ export const ArcadeTouchControls: React.FC<Props> = ({
     : 'LLAVE';
   const yLabel = mountedYoshi
     ? 'LENGUA'
+    : partition === 'flip'
+    ? 'GRAV'
     : partition === 'smw'
     ? 'GIRO'
     : 'ATAQUE';
@@ -415,13 +417,17 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         ]}
       />
 
-      {/* Y Button: Yoshi Tongue / SMW Spin Jump */}
-      {(partition === 'smw' || mountedYoshi) && (
+      {/* Y Button: Yoshi Tongue / SMW Spin Jump / Gravity Flip */}
+      {(partition === 'smw' || partition === 'flip' || mountedYoshi) && (
         <View
           pointerEvents="none"
           style={[
             styles.spinBtn,
-            mountedYoshi ? styles.spinBtnYoshi : styles.spinBtnSmw,
+            mountedYoshi
+              ? styles.spinBtnYoshi
+              : partition === 'flip'
+              ? styles.spinBtnFlip
+              : styles.spinBtnSmw,
             pressed.spin && styles.btnDepressed,
             {
               width: auxRadius * 2,
@@ -597,6 +603,10 @@ const styles = StyleSheet.create({
   spinBtnSmw: {
     backgroundColor: 'rgba(16, 185, 129, 0.82)',
     borderColor: '#a7f3d0',
+  },
+  spinBtnFlip: {
+    backgroundColor: 'rgba(168, 85, 247, 0.85)',
+    borderColor: '#e9d5ff',
   },
   fireBtn: {
     position: 'absolute',

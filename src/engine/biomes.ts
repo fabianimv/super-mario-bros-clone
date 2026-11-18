@@ -117,6 +117,33 @@ export const DIM_WORLD_NAMES = [
   'N • NÚCLEO CÓSMICO',
 ];
 
+// Modo Torre (vertical — 2 regiones x 4 etapas = 8 niveles)
+export const TOWER_WORLDS = 2;
+export const TOWER_TOTAL_LEVELS = TOWER_WORLDS * STAGES_PER_WORLD; // 8
+export const TOWER_WORLD_PREFIXES = ['T', 'A'];
+export const TOWER_WORLD_NAMES = [
+  'T • TORRE INFINITA',
+  'A • ÁPICE DEL CAOS',
+];
+
+// Modo Inverso / Flip (gravedad invertida — 2 regiones x 4 etapas = 8 niveles)
+export const FLIP_WORLDS = 2;
+export const FLIP_TOTAL_LEVELS = FLIP_WORLDS * STAGES_PER_WORLD; // 8
+export const FLIP_WORLD_PREFIXES = ['G', 'I'];
+export const FLIP_WORLD_NAMES = [
+  'G • CÁMARA GRAVITACIONAL',
+  'I • TEMPLO INVERSO',
+];
+
+// Modo Senda Estelar (mundo secreto — 2 regiones x 4 etapas = 8 niveles)
+export const STAR_ROAD_WORLDS = 2;
+export const STAR_ROAD_TOTAL_LEVELS = STAR_ROAD_WORLDS * STAGES_PER_WORLD; // 8
+export const STAR_ROAD_WORLD_PREFIXES = ['★', 'Ω'];
+export const STAR_ROAD_WORLD_NAMES = [
+  '★ • COLISEO ABISAL',
+  'Ω • CORREDOR CÓSMICO',
+];
+
 /** Cantidad de niveles de cada modo. */
 export function partitionTotalLevels(partition: GamePartition): number {
   switch (partition) {
@@ -134,6 +161,12 @@ export function partitionTotalLevels(partition: GamePartition): number {
       return ECHO_TOTAL_LEVELS;
     case 'dimension':
       return DIM_TOTAL_LEVELS;
+    case 'tower':
+      return TOWER_TOTAL_LEVELS;
+    case 'flip':
+      return FLIP_TOTAL_LEVELS;
+    case 'star_road':
+      return STAR_ROAD_TOTAL_LEVELS;
     default:
       return TOTAL_LEVELS;
   }
@@ -976,12 +1009,39 @@ export function getWorldLabel(levelIndex: number, partition: GamePartition = 'cl
     const prefix = DIM_WORLD_PREFIXES[Math.min(DIM_WORLD_PREFIXES.length - 1, worldNum - 1)] ?? 'D';
     return `${prefix}-${stageNum}`;
   }
+  if (partition === 'tower') {
+    const prefix = TOWER_WORLD_PREFIXES[Math.min(TOWER_WORLD_PREFIXES.length - 1, worldNum - 1)] ?? 'T';
+    return `${prefix}-${stageNum}`;
+  }
+  if (partition === 'flip') {
+    const prefix = FLIP_WORLD_PREFIXES[Math.min(FLIP_WORLD_PREFIXES.length - 1, worldNum - 1)] ?? 'G';
+    return `${prefix}-${stageNum}`;
+  }
+  if (partition === 'star_road') {
+    const prefix = STAR_ROAD_WORLD_PREFIXES[Math.min(STAR_ROAD_WORLD_PREFIXES.length - 1, worldNum - 1)] ?? '★';
+    return `${prefix}-${stageNum}`;
+  }
   return `${worldNum}-${stageNum}`;
 }
 
 export function getStageBiome(levelIndex: number, partition: GamePartition = 'classic'): BiomeId {
   const worldNum = Math.floor(levelIndex / STAGES_PER_WORLD) + 1;
   const stageNum = (levelIndex % STAGES_PER_WORLD) + 1;
+
+  if (partition === 'tower') {
+    if (stageNum === 4) return 'fortress';
+    return worldNum === 1 ? (stageNum === 1 ? 'night' : 'cavern') : (stageNum === 1 ? 'ember' : 'night');
+  }
+
+  if (partition === 'flip') {
+    if (stageNum === 4) return 'fortress';
+    return worldNum === 1 ? 'aurora' : 'prism';
+  }
+
+  if (partition === 'star_road') {
+    if (stageNum === 4) return 'fortress';
+    return worldNum === 1 ? 'starfield' : 'cosmos';
+  }
 
   if (partition === 'dimension') {
     if (stageNum === 4) return 'fortress';

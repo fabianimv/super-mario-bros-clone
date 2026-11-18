@@ -67,6 +67,10 @@ export const PauseModal: React.FC<PauseProps> = ({
           partition === 'fortune' && { borderColor: '#f59e0b' },
           partition === 'mirage' && { borderColor: '#a78bfa' },
           partition === 'echo' && { borderColor: '#2dd4bf' },
+          partition === 'dimension' && { borderColor: '#0891b2' },
+          partition === 'tower' && { borderColor: '#f97316' },
+          partition === 'flip' && { borderColor: '#a855f7' },
+          partition === 'star_road' && { borderColor: '#eab308' },
         ]}
       >
         <Text style={[styles.title, { fontFamily }]}>
@@ -85,6 +89,12 @@ export const PauseModal: React.FC<PauseProps> = ({
               ? 'PAUSA • MUNDO 8 · ECO'
               : partition === 'dimension'
               ? 'PAUSA • DIMENSIÓN 3D'
+              : partition === 'tower'
+              ? 'PAUSA • LA TORRE INFINITA'
+              : partition === 'flip'
+              ? 'PAUSA • TEMPLO INVERSO'
+              : partition === 'star_road'
+              ? 'PAUSA • SENDA ESTELAR'
               : 'PAUSA • PLOMERO BROS'
             : 'AJUSTES ARCADE'}
         </Text>
@@ -226,6 +236,12 @@ export const StageStatusOverlay: React.FC<StatusBannerProps> = ({
                 ? '#99f6e4'
                 : partition === 'dimension'
                 ? '#a5f3fc'
+                : partition === 'tower'
+                ? '#fdba74'
+                : partition === 'flip'
+                ? '#d8b4fe'
+                : partition === 'star_road'
+                ? '#fde047'
                 : '#f87171',
             },
           ]}
@@ -244,6 +260,12 @@ export const StageStatusOverlay: React.FC<StatusBannerProps> = ({
             ? '🪞 PLOMERO ECO'
             : partition === 'dimension'
             ? '🧊 PLOMERO DIMENSIÓN 3D'
+            : partition === 'tower'
+            ? '🗼 LA TORRE INFINITA'
+            : partition === 'flip'
+            ? '🔄 TEMPLO INVERSO'
+            : partition === 'star_road'
+            ? '🌟 SENDA ESTELAR'
             : '🍄 SUPER PLOMERO BROS'}
         </Text>
         <Text style={[styles.introWorld, { fontFamily }]}>
@@ -251,7 +273,15 @@ export const StageStatusOverlay: React.FC<StatusBannerProps> = ({
         </Text>
         <Text style={styles.introSubtitle}>{stageTitle.toUpperCase()}</Text>
         <View style={styles.introLivesRow}>
-          <View style={[styles.heroBadge, isSmw && { backgroundColor: '#16a34a' }]}>
+          <View
+            style={[
+              styles.heroBadge,
+              isSmw && { backgroundColor: '#16a34a' },
+              partition === 'tower' && { backgroundColor: '#ea580c' },
+              partition === 'flip' && { backgroundColor: '#7c3aed' },
+              partition === 'star_road' && { backgroundColor: '#ca8a04' },
+            ]}
+          >
             <Text style={[styles.heroBadgeLetter, { fontFamily }]}>P</Text>
           </View>
           <Text style={[styles.introLivesText, { fontFamily }]}>×  {lives}</Text>
@@ -286,6 +316,12 @@ export const StageStatusOverlay: React.FC<StatusBannerProps> = ({
                 ? '¡ECO COMPLETADO!'
                 : partition === 'dimension'
                 ? '¡DIMENSIÓN CONQUISTADA!'
+                : partition === 'tower'
+                ? '¡CUMBRE DE LA TORRE ALCANZADA!'
+                : partition === 'flip'
+                ? '¡TEMPLO INVERSO PURIFICADO!'
+                : partition === 'star_road'
+                ? '¡SENDA ESTELAR CONQUISTADA!'
                 : '¡CAMPEÓN DE LOS 6 REINOS!'
               : 'FIN DE LA PARTIDA'}
           </Text>
@@ -306,6 +342,12 @@ export const StageStatusOverlay: React.FC<StatusBannerProps> = ({
                 ? '¡Coordinaste con tu reflejo y cruzaste los 4 mundos de Eco: 16 niveles!'
                 : partition === 'dimension'
                 ? '¡Cruzaste los 8 mundos de la Dimensión hasta el Núcleo Cósmico: 32 niveles en 3D!'
+                : partition === 'tower'
+                ? '¡Escalaste las 2 regiones de la Torre Infinita: 8 niveles de vértigo vertical!'
+                : partition === 'flip'
+                ? '¡Dominaste la inversión gravitacional y resolviste las 8 salas del Templo Inverso!'
+                : partition === 'star_road'
+                ? '¡Superaste los Coliseos por oleadas y el Corredor 3D: los 8 niveles de la Senda Estelar!'
                 : '¡Derrotaste al Rey Koopa en la Fortaleza Final y liberaste los 24 niveles!'
               : 'Has agotado tus vidas en esta incursión.'}
           </Text>

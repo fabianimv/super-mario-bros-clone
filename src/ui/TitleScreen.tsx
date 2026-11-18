@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getWorldLabel } from '../engine/biomes';
-import { PARTITION_INFO, PARTITION_ORDER, getPartitionProgress } from '../engine/partitions';
+import { NONLINEAR_PARTITIONS, PARTITION_INFO, PARTITION_ORDER, getPartitionProgress } from '../engine/partitions';
 import type { GamePartition, SaveProgress } from '../engine/types';
 
 interface Props {
@@ -106,6 +106,38 @@ export const TitleScreen: React.FC<Props> = ({
             );
           })}
         </View>
+        <View style={[styles.partitionBar, styles.partitionBarNonlinear]}>
+          {NONLINEAR_PARTITIONS.map((part) => {
+            const active = part === partition;
+            const isLocked = part === 'star_road' && !progress.secretUnlocked;
+            return (
+              <Pressable
+                key={part}
+                disabled={isLocked}
+                onPress={() => onSelectPartition(part)}
+                style={[
+                  styles.partitionTab,
+                  styles.partitionTabNonlinear,
+                  isLocked && styles.partitionTabLocked,
+                  active && { backgroundColor: PARTITION_INFO[part].accent },
+                  active && styles.partitionTabNonlinearActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.partitionTabText,
+                    styles.partitionTabTextNonlinear,
+                    { fontFamily },
+                    isLocked && { color: '#94a3b8' },
+                    active && styles.partitionTabTextActive,
+                  ]}
+                >
+                  {isLocked ? '🔒 🌟 SENDA ESTELAR' : PARTITION_INFO[part].tab}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       {/* Cartridge Signboard Logo */}
@@ -115,6 +147,9 @@ export const TitleScreen: React.FC<Props> = ({
           partition === 'smw' && styles.signBoardSmw,
           partition === 'expedition' && styles.signBoardExp,
           partition === 'frontier' && styles.signBoardFrontier,
+          partition === 'tower' && styles.signBoardTower,
+          partition === 'flip' && styles.signBoardFlip,
+          partition === 'star_road' && styles.signBoardStarRoad,
         ]}
       >
         <View style={styles.rivetRow}>
@@ -284,6 +319,39 @@ const styles = StyleSheet.create({
   signBoardFrontier: {
     backgroundColor: '#082f49',
     borderColor: '#7dd3fc',
+  },
+  signBoardTower: {
+    backgroundColor: '#7c2d12',
+    borderColor: '#fed7aa',
+  },
+  signBoardFlip: {
+    backgroundColor: '#581c87',
+    borderColor: '#e9d5ff',
+  },
+  signBoardStarRoad: {
+    backgroundColor: '#713f12',
+    borderColor: '#fde047',
+  },
+  partitionBarNonlinear: {
+    marginTop: 0,
+    marginBottom: 0,
+    borderColor: '#eab308',
+  },
+  partitionTabNonlinear: {
+    minWidth: 140,
+    borderWidth: 1,
+    borderColor: '#eab308',
+  },
+  partitionTabNonlinearActive: {
+    borderColor: '#fef08a',
+  },
+  partitionTabTextNonlinear: {
+    color: '#fef08a',
+  },
+  partitionTabLocked: {
+    backgroundColor: '#1e293b',
+    borderColor: '#475569',
+    opacity: 0.7,
   },
   rivetRow: {
     width: '100%',

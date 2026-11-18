@@ -92,7 +92,14 @@ export function updateWrench(world: WorldState, events: GameEvent[], cb: WrenchC
     const row = Math.floor((w.y + w.height / 2) / TILE);
     const b = world.blockGrid.get(key(col, row));
     if (b && b.type !== 'hidden') {
-      if (b.type === 'question' || b.type === 'brick' || b.type === 'rotating') cb.hitBlock(b);
+      if (
+        b.type === 'question' ||
+        b.type === 'brick' ||
+        b.type === 'rotating' ||
+        b.type === 'on_off_switch'
+      ) {
+        cb.hitBlock(b);
+      }
       cb.sparks(w.x + w.width / 2, w.y + w.height / 2, '#e2e8f0', 4);
       events.push({ type: 'sfx', id: 'bump' });
       w.phase = 'back';

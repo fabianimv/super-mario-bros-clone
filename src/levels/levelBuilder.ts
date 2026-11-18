@@ -36,6 +36,11 @@ import {
   putBlock,
 } from './builderToolkit';
 import { buildSmwWorldState } from './smwLevelBuilder';
+import {
+  buildTowerWorldState,
+  buildFlipWorldState,
+  buildStarRoadWorldState,
+} from './nonlinearBuilder';
 import { buildClassicStage } from './classicBuilder';
 import { buildExpeditionOrFrontierStage } from './expeditionBuilder';
 import { buildFortuneStage } from './fortuneBuilder';
@@ -189,6 +194,16 @@ export function buildWorldState(
   },
   partition: GamePartition = 'classic'
 ): WorldState {
+  if (partition === 'tower') {
+    return buildTowerWorldState(levelIndex, carryState);
+  }
+  if (partition === 'flip') {
+    return buildFlipWorldState(levelIndex, carryState);
+  }
+  if (partition === 'star_road') {
+    return buildStarRoadWorldState(levelIndex, carryState);
+  }
+
   if (partition === 'smw') {
     return applyStageObjective(
       applyAbilityChallenges(

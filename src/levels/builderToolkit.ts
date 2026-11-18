@@ -107,6 +107,7 @@ export interface BuilderCtx {
   isUnderground: boolean;
   enemySeq: number;
   partition: GamePartition;
+  worldRows?: number;
 }
 
 // ============================================================================
@@ -166,7 +167,8 @@ export function putBlock(
   type: BlockType,
   content: BlockContent = null
 ): void {
-  if (col < 0 || row < 0 || row >= 15) return;
+  const maxRows = (ctx.worldRows ?? 14) + 1;
+  if (col < 0 || col > 1000 || row < 0 || row >= maxRows) return;
   const key = gridKey(col, row);
   if (ctx.blockGrid.has(key)) {
     const prev = ctx.blockGrid.get(key)!;

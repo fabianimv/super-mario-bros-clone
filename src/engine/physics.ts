@@ -4,6 +4,7 @@ import {
   LOGICAL_HEIGHT,
   MIN_CAMERA_WORLD_X,
   TILE,
+  WORLD_ROWS,
 } from './biomes';
 import {
   isInLowGrav,
@@ -13,7 +14,12 @@ import {
   windPush,
 } from './mechanics';
 import { enforceGoalLock, updateObjectives } from './objectives';
-import { updateSecrets } from './secrets';
+import {
+  checkPipeEntry,
+  exitPipeSubroom,
+  stepPipeTransition,
+  updateSecrets,
+} from './secrets';
 import {
   SLIDE_FRAMES,
   SLIDE_FRICTION,
@@ -33,6 +39,7 @@ import { buildWorldState, gridKey } from '../levels/levelBuilder';
 import type {
   Block,
   Enemy,
+  EnemyType,
   GameEvent,
   InputState,
   MovingPlatform,
@@ -183,10 +190,11 @@ interface SolidHit extends Rect {
 
 function collectNearbySolids(world: WorldState, box: Rect, includeHidden = false): SolidHit[] {
   const results: SolidHit[] = [];
+  const worldRows = world.worldRows ?? WORLD_ROWS;
   const minCol = Math.floor(box.x / TILE) - 1;
   const maxCol = Math.floor((box.x + box.width) / TILE) + 1;
   const minRow = Math.max(0, Math.floor(box.y / TILE) - 1);
-  const maxRow = Math.min(14, Math.floor((box.y + box.height) / TILE) + 1);
+  const maxRow = Math.min(worldRows + 1, Math.floor((box.y + box.height) / TILE) + 1);
 
   for (let r = minRow; r <= maxRow; r++) {
     for (let c = minCol; c <= maxCol; c++) {
@@ -195,6 +203,10 @@ function collectNearbySolids(world: WorldState, box: Rect, includeHidden = false
       if (b.type === 'hidden' && !includeHidden) continue;
       // SMW Rotating Blocks become passable while actively spinning!
       if (b.type === 'rotating' && b.spinTimer > 0) continue;
+      // ON/OFF blocks: on_block is solid only when onOffState === 'on', off_block is solid only when onOffState === 'off'
+      const onOff = world.onOffState ?? 'on';
+      if (b.type === 'on_block' && onOff !== 'on') continue;
+      if (b.type === 'off_block' && onOff !== 'off') continue;
       results.push({ x: b.x, y: b.y, width: b.width, height: b.height, block: b });
     }
   }
@@ -232,7 +244,9 @@ function triggerBlockHit(
     block.type === 'ground_deep' ||
     block.type === 'hard' ||
     block.type === 'empty' ||
-    block.type === 'bridge'
+    block.type === 'bridge' ||
+    block.type === 'on_block' ||
+    block.type === 'off_block'
   ) {
     if (!byShellOrCape) {
       events.push({ type: 'sfx', id: 'bump' });
@@ -269,6 +283,17 @@ function triggerBlockHit(
       c.collected = true;
       awardCoin(world, c.x, c.y, events);
     }
+  }
+
+  // ON / OFF Switch Block: toggles world onOffState, emits sfx, haptic and floating text
+  if (block.type === 'on_off_switch') {
+    world.onOffState = (world.onOffState ?? 'on') === 'on' ? 'off' : 'on';
+    events.push({ type: 'sfx', id: 'switch_toggle' });
+    events.push({ type: 'haptic', kind: 'medium' });
+    const isNowOn = world.onOffState === 'on';
+    spawnText(world, block.x, block.baseY - 14, isNowOn ? 'ON' : 'OFF', isNowOn ? '#ef4444' : '#3b82f6');
+    spawnSparks(world, block.x + 16, block.baseY + 16, isNowOn ? '#ef4444' : '#3b82f6', 8);
+    return;
   }
 
   if (block.type === 'question' || block.type === 'hidden' || block.content !== null) {
@@ -630,6 +655,12 @@ export function stepWorld(
 
   updateParticlesAndTexts(world);
 
+  // Pipe transitions (entering or exiting pipe)
+  if (world.status === 'pipe_enter' || world.status === 'pipe_exit') {
+    stepPipeTransition(world, events);
+    return events;
+  }
+
   // Stage Intro Banner countdown
   if (world.status === 'stage_intro') {
     world.statusTimer -= 1;
@@ -681,8 +712,9 @@ export function stepWorld(
     const p = world.player;
     const fp = world.flagpole;
     if (fp && world.warpTo == null) {
-      const groundY = GROUND_ROW * TILE - p.height;
-      if (fp.flagY < 10.6 * TILE) {
+      const baseGroundY = Math.round((fp.y + fp.height) / TILE) * TILE;
+      const groundY = baseGroundY - p.height;
+      if (fp.flagY < baseGroundY - 1.4 * TILE) {
         fp.flagY += 3.8;
       }
       if (p.y < groundY && world.statusTimer > 85) {
@@ -711,7 +743,8 @@ export function stepWorld(
   if (world.status === 'goal_tape') {
     const p = world.player;
     const gt = world.goalTape;
-    const groundY = GROUND_ROW * TILE - p.height;
+    const baseGroundY = gt ? Math.round((gt.y + gt.height) / TILE) * TILE : GROUND_ROW * TILE;
+    const groundY = baseGroundY - p.height;
     if (p.y < groundY) {
       p.vy = Math.min(p.vy + 0.45, 9);
       p.y = Math.min(groundY, p.y + p.vy);
@@ -753,7 +786,8 @@ export function stepWorld(
         boss.fallingInLava = true;
         boss.vy += 0.55;
         boss.y += boss.vy;
-        if (boss.y > LOGICAL_HEIGHT + 24) {
+        const bottomLimit = ((world.worldRows ?? WORLD_ROWS) * TILE) + 24;
+        if (boss.y > bottomLimit) {
           boss.defeated = true;
           addScore(world, 10000);
           spawnText(world, world.player.x - 16, world.player.y - 24, '+10000 ¡REY CAÍDO!', '#4ade80');
@@ -928,10 +962,23 @@ export function stepWorld(
   const spinTriggered = input.spin && !world.prevSpinHeld;
   world.prevSpinHeld = input.spin;
 
+  // Inverted Gravity Flip via Y button in flip mode (when gravityDir is defined)
+  let gravityFlipped = false;
+  if (world.gravityDir !== undefined && spinTriggered && (p.coyoteTimer > 0 || p.onGround)) {
+    world.gravityDir = world.gravityDir === -1 ? 1 : -1;
+    p.onGround = false;
+    p.coyoteTimer = 0;
+    p.vy = world.gravityDir * 2.5;
+    events.push({ type: 'sfx', id: 'gravity_flip' });
+    events.push({ type: 'haptic', kind: 'heavy' });
+    gravityFlipped = true;
+  }
+  const effectiveSpinTriggered = spinTriggered && !gravityFlipped;
+
   // =========================================================================
   // YOSHI TONGUE / TRIPLE FIRE BREATH & CAPE SPIN TAIL-WHIP!
   // =========================================================================
-  if (p.mountedYoshi && (spinTriggered || fireTriggered)) {
+  if (p.mountedYoshi && (effectiveSpinTriggered || fireTriggered)) {
     if (p.yoshiMouthItem === 'fire') {
       p.yoshiMouthItem = 'none';
       p.fireCooldown = 14;
@@ -960,7 +1007,7 @@ export function stepWorld(
   } else if (
     !p.mountedYoshi &&
     p.powerState === 3 &&
-    (fireTriggered || (spinTriggered && !p.onGround)) &&
+    (fireTriggered || (effectiveSpinTriggered && !p.onGround)) &&
     p.capeSpinTimer <= 0
   ) {
     // SMW 360-degree Cape Spin Attack!
@@ -1014,7 +1061,13 @@ export function stepWorld(
       const midRow = Math.floor((p.y + p.height * 0.55) / TILE);
       for (const sc of sideCols) {
         const blk = world.blockGrid.get(gridKey(sc, midRow));
-        if (blk && (blk.type === 'rotating' || blk.type === 'brick' || blk.type === 'question')) {
+        if (
+          blk &&
+          (blk.type === 'rotating' ||
+            blk.type === 'brick' ||
+            blk.type === 'question' ||
+            blk.type === 'on_off_switch')
+        ) {
           triggerBlockHit(world, blk, true, events);
         }
       }
@@ -1184,13 +1237,21 @@ export function stepWorld(
   }
 
   p.x += p.vx;
-  const maxWorldX = world.totalCols * TILE - p.width;
-  if (p.x < 0) {
-    p.x = 0;
-    if (p.vx < 0) p.vx = 0;
-  } else if (p.x > maxWorldX) {
-    p.x = maxWorldX;
-    if (p.vx > 0) p.vx = 0;
+  if (world.wrapHorizontal) {
+    if (p.x + p.width < TILE) {
+      p.x = (world.totalCols - 2) * TILE - p.width;
+    } else if (p.x > (world.totalCols - 2) * TILE) {
+      p.x = TILE;
+    }
+  } else {
+    const maxWorldX = world.totalCols * TILE - p.width;
+    if (p.x < 0) {
+      p.x = 0;
+      if (p.vx < 0) p.vx = 0;
+    } else if (p.x > maxWorldX) {
+      p.x = maxWorldX;
+      if (p.vx > 0) p.vx = 0;
+    }
   }
 
   const horizSolids = collectNearbySolids(world, p, false);
@@ -1248,11 +1309,13 @@ export function stepWorld(
     p.jumpBufferTimer -= 1;
   }
 
+  const gDir = world.gravityDir ?? 1;
+
   // Salto en pared (Fase 4): rebota hacia el lado contrario
   const wallJumpDir = p.wallDir || ((p.wallCoyote ?? 0) > 0 ? p.lastWallDir ?? 0 : 0);
   if (jumpJustPressed && !p.onGround && p.coyoteTimer <= 0 && wallJumpDir) {
     const away: -1 | 1 = wallJumpDir === 1 ? -1 : 1;
-    p.vy = WALL_JUMP_VY;
+    p.vy = WALL_JUMP_VY * gDir;
     p.vx = away * WALL_JUMP_VX;
     p.facing = away;
     p.wallJumpLock = WALL_JUMP_LOCK;
@@ -1267,7 +1330,7 @@ export function stepWorld(
   } else if (p.mountedYoshi && input.up && jumpJustPressed) {
     p.mountedYoshi = false;
     syncStandingHeight(world);
-    p.vy = -12.8;
+    p.vy = -12.8 * gDir;
     p.onGround = false;
     p.jumpBufferTimer = 0;
     events.push({ type: 'sfx', id: 'spin_jump' });
@@ -1286,9 +1349,9 @@ export function stepWorld(
       stateTimer: 0,
       animTimer: 0,
     });
-  } else if (!p.mountedYoshi && spinTriggered && p.coyoteTimer > 0) {
+  } else if (world.gravityDir === undefined && !p.mountedYoshi && effectiveSpinTriggered && p.coyoteTimer > 0) {
     // SMW Spin Jump from ground via Y button!
-    p.vy = -10.4;
+    p.vy = -10.4 * gDir;
     p.onGround = false;
     p.coyoteTimer = 0;
     p.spinJumping = true;
@@ -1300,7 +1363,7 @@ export function stepWorld(
     const speedRatio = Math.min(1, Math.abs(p.vx) / 5.5);
     // Full P-Meter + Cape Feather -> SMW Superhero Cape Takeoff!
     if (p.powerState === 3 && p.pMeter >= 108) {
-      p.vy = -12.4;
+      p.vy = -12.4 * gDir;
       p.capeFlying = true;
       p.capeFlightTimer = 220;
       p.capeDiveSpeed = 4.2;
@@ -1308,7 +1371,7 @@ export function stepWorld(
       events.push({ type: 'haptic', kind: 'heavy' });
       spawnSparks(world, p.x + p.width / 2, p.y + p.height, '#fde047', 6);
     } else {
-      p.vy = -10.65 - speedRatio * 1.35;
+      p.vy = (-10.65 - speedRatio * 1.35) * gDir;
       events.push({ type: 'sfx', id: p.powerState > 0 ? 'jump_big' : 'jump' });
       events.push({ type: 'haptic', kind: 'light' });
     }
@@ -1317,7 +1380,7 @@ export function stepWorld(
     p.jumpBufferTimer = 0;
     spawnDust(world, p.x + p.width / 2, p.y + p.height, 3);
   } else if (jumpJustPressed && !p.onGround && p.coyoteTimer <= 0 && p.airJumpsLeft > 0) {
-    p.vy = -10.1;
+    p.vy = -10.1 * gDir;
     p.airJumpsLeft -= 1;
     p.jumpBufferTimer = 0;
     spawnDust(world, p.x + p.width / 2, p.y + p.height, 5);
@@ -1332,15 +1395,17 @@ export function stepWorld(
     }
   }
 
-  if (!input.jump && p.vy < -4.2 && !p.capeFlying) {
+  const jumpMovingAway = gDir === 1 ? p.vy < -4.2 : p.vy > 4.2;
+  if (!input.jump && jumpMovingAway && !p.capeFlying) {
     p.vy *= 0.62;
   }
 
   // Gravity + Cape Flight / Parachute Slow-Fall
+  const movingAgainstGravity = gDir === 1 ? p.vy < 0 : p.vy > 0;
   let gravity =
     input.jump && Math.abs(p.vy) < 2.3
       ? 0.27
-      : p.vy < 0
+      : movingAgainstGravity
       ? 0.45
       : 0.58;
 
@@ -1353,79 +1418,133 @@ export function stepWorld(
   // Zonas de gravedad baja (Mundo 6): saltos lentos y flotantes
   const lowGrav = isInLowGrav(world, p.x + p.width / 2);
   if (lowGrav) gravity *= 0.5;
-  p.vy = Math.min(p.vy + gravity, lowGrav ? 5.5 : 12.2);
+  const maxFallSpeed = lowGrav ? 5.5 : 12.2;
+  if (gDir === 1) {
+    p.vy = Math.min(p.vy + gravity, maxFallSpeed);
+  } else {
+    p.vy = Math.max(p.vy - gravity, -maxFallSpeed);
+  }
+
   // Deslizarse por la pared: cae lento
-  if (p.wallDir && p.vy > WALL_SLIDE_SPEED) {
-    p.vy = WALL_SLIDE_SPEED;
+  if (p.wallDir) {
+    if (gDir === 1 && p.vy > WALL_SLIDE_SPEED) p.vy = WALL_SLIDE_SPEED;
+    if (gDir === -1 && p.vy < -WALL_SLIDE_SPEED) p.vy = -WALL_SLIDE_SPEED;
     if (world.frameCount % 6 === 0) {
       spawnDust(world, p.x + (p.wallDir === 1 ? p.width : 0), p.y + p.height * 0.6, 1);
     }
   }
 
   // SMW Cape Parachute Glide: holding A while falling billows the yellow cape!
-  if (p.powerState === 3 && !p.onGround && input.jump && !p.capeFlying && p.vy > 1.85) {
-    p.vy = 1.85;
+  if (p.powerState === 3 && !p.onGround && input.jump && !p.capeFlying && p.vy * gDir > 1.85) {
+    p.vy = 1.85 * gDir;
   }
 
   const prevY = p.y;
   p.y += p.vy;
   p.onGround = false;
 
-  const vertSolids = collectNearbySolids(world, p, p.vy < 0);
+  const hitMovingAgainstGravity = gDir === 1 ? p.vy < 0 : p.vy > 0;
+  const vertSolids = collectNearbySolids(world, p, hitMovingAgainstGravity);
   for (const s of vertSolids) {
     if (!overlaps(p, s)) continue;
 
-    if (p.vy > 0) {
-      if (s.block?.type === 'hidden') continue;
-      if (s.platform && prevY + p.height > s.y + 10) continue;
+    if (gDir === 1) {
+      if (p.vy > 0) {
+        if (s.block?.type === 'hidden') continue;
+        if (s.platform && prevY + p.height > s.y + 10) continue;
 
-      // Spin-jumping onto Rotating or Brick blocks as Super/Cape shatters them from above!
-      if (
-        p.spinJumping &&
-        p.powerState > 0 &&
-        s.block &&
-        (s.block.type === 'rotating' || s.block.type === 'brick') &&
-        s.block.content === null
-      ) {
-        triggerBlockHit(world, s.block, true, events);
-        p.vy = -7.8;
-        continue;
-      }
+        // Spin-jumping onto Rotating or Brick blocks as Super/Cape shatters them from above!
+        if (
+          p.spinJumping &&
+          p.powerState > 0 &&
+          s.block &&
+          (s.block.type === 'rotating' || s.block.type === 'brick') &&
+          s.block.content === null
+        ) {
+          triggerBlockHit(world, s.block, true, events);
+          p.vy = -7.8;
+          continue;
+        }
 
-      p.y = s.y - p.height;
-      p.vy = 0;
-      p.onGround = true;
-    } else if (p.vy < 0) {
-      if (s.platform) continue;
-      if (s.block?.type === 'hidden' && prevY < s.y + s.height - 8) continue;
+        p.y = s.y - p.height;
+        p.vy = 0;
+        p.onGround = true;
+      } else if (p.vy < 0) {
+        if (s.platform) continue;
+        if (s.block?.type === 'hidden' && prevY < s.y + s.height - 8) continue;
 
-      if (s.block && s.block.type !== 'hidden') {
-        const rightOverlap = p.x + p.width - s.x;
-        const leftOverlap = s.x + s.width - p.x;
-        const cornerMargin = 7;
-        if (rightOverlap > 0 && rightOverlap <= cornerMargin) {
-          const nudgeBox = { ...p, x: s.x - p.width };
-          const blocked = vertSolids.some((other) => other !== s && overlaps(nudgeBox, other));
-          if (!blocked) {
-            p.x = s.x - p.width;
-            continue;
-          }
-        } else if (leftOverlap > 0 && leftOverlap <= cornerMargin) {
-          const nudgeBox = { ...p, x: s.x + s.width };
-          const blocked = vertSolids.some((other) => other !== s && overlaps(nudgeBox, other));
-          if (!blocked) {
-            p.x = s.x + s.width;
-            continue;
+        if (s.block && s.block.type !== 'hidden') {
+          const rightOverlap = p.x + p.width - s.x;
+          const leftOverlap = s.x + s.width - p.x;
+          const cornerMargin = 7;
+          if (rightOverlap > 0 && rightOverlap <= cornerMargin) {
+            const nudgeBox = { ...p, x: s.x - p.width };
+            const blocked = vertSolids.some((other) => other !== s && overlaps(nudgeBox, other));
+            if (!blocked) {
+              p.x = s.x - p.width;
+              continue;
+            }
+          } else if (leftOverlap > 0 && leftOverlap <= cornerMargin) {
+            const nudgeBox = { ...p, x: s.x + s.width };
+            const blocked = vertSolids.some((other) => other !== s && overlaps(nudgeBox, other));
+            if (!blocked) {
+              p.x = s.x + s.width;
+              continue;
+            }
           }
         }
-      }
 
-      p.y = s.y + s.height;
-      p.vy = 0;
-      if (s.block) {
-        triggerBlockHit(world, s.block, false, events);
-      } else {
-        events.push({ type: 'sfx', id: 'bump' });
+        p.y = s.y + s.height;
+        p.vy = 0;
+        if (s.block) {
+          triggerBlockHit(world, s.block, false, events);
+        } else {
+          events.push({ type: 'sfx', id: 'bump' });
+        }
+      }
+    } else {
+      // Inverted Gravity (gDir === -1)
+      if (p.vy < 0) {
+        // Landing against underside of ceiling
+        if (s.block?.type === 'hidden') continue;
+        if (s.platform && prevY < s.y + s.height - 10) continue;
+
+        p.y = s.y + s.height;
+        p.vy = 0;
+        p.onGround = true;
+      } else if (p.vy > 0) {
+        // Hitting blocks on top
+        if (s.platform) continue;
+        if (s.block?.type === 'hidden' && prevY > s.y + 8) continue;
+
+        if (s.block && s.block.type !== 'hidden') {
+          const rightOverlap = p.x + p.width - s.x;
+          const leftOverlap = s.x + s.width - p.x;
+          const cornerMargin = 7;
+          if (rightOverlap > 0 && rightOverlap <= cornerMargin) {
+            const nudgeBox = { ...p, x: s.x - p.width };
+            const blocked = vertSolids.some((other) => other !== s && overlaps(nudgeBox, other));
+            if (!blocked) {
+              p.x = s.x - p.width;
+              continue;
+            }
+          } else if (leftOverlap > 0 && leftOverlap <= cornerMargin) {
+            const nudgeBox = { ...p, x: s.x + s.width };
+            const blocked = vertSolids.some((other) => other !== s && overlaps(nudgeBox, other));
+            if (!blocked) {
+              p.x = s.x + s.width;
+              continue;
+            }
+          }
+        }
+
+        p.y = s.y - p.height;
+        p.vy = 0;
+        if (s.block) {
+          triggerBlockHit(world, s.block, false, events);
+        } else {
+          events.push({ type: 'sfx', id: 'bump' });
+        }
       }
     }
   }
@@ -1440,12 +1559,46 @@ export function stepWorld(
   }
 
   // Pit / Lava death check
+  const worldRows = world.worldRows ?? WORLD_ROWS;
+  const worldBottomY = worldRows * TILE;
   const playerFootCol = Math.floor((p.x + p.width / 2) / TILE);
+
+  if (gDir === -1 && p.y < -24) {
+    killPlayer(world, events);
+    return events;
+  }
+
+  if (p.y > worldBottomY + 24) {
+    if (world.subArea === 'subroom' && world.biomeId === 'cloudland') {
+      exitPipeSubroom(world, events);
+      return events;
+    }
+    killPlayer(world, events);
+    return events;
+  }
+
   if (
-    p.y > LOGICAL_HEIGHT + 24 ||
-    (world.lavaCols.has(playerFootCol) && p.y + p.height >= lavaSurfaceY(world, playerFootCol))
+    world.lavaCols.has(playerFootCol) &&
+    p.y + p.height >= lavaSurfaceY(world, playerFootCol)
   ) {
     killPlayer(world, events);
+    return events;
+  }
+
+  // Rising Hazard (Magma / Shadow in Tower)
+  if (world.risingHazardY != null && world.status === 'playing') {
+    world.risingHazardY -= (world.risingHazardSpeed ?? 0.4) * (world.doubleJumpAssist ? 0.85 : 1);
+    if (world.risingHazardY > p.y + 12 * TILE) {
+      world.risingHazardY = p.y + 12 * TILE;
+    }
+    if (p.y + p.height - 8 > world.risingHazardY) {
+      damagePlayer(world, events);
+      if (p.dead || world.status !== 'playing') return events;
+    }
+  }
+
+  // Interactive Pipe Entry (▼ on pipe, or ▲ if inverted gravity)
+  if (checkPipeEntry(world, input, events)) {
     return events;
   }
 
@@ -1467,6 +1620,14 @@ export function stepWorld(
     nextCam = p.x + p.width + rightSafeMargin - viewportWorldWidth;
   }
   world.cameraX = Math.max(minCam, Math.min(maxCam, nextCam));
+
+  // Dynamic Camera Y in vertical/tall worlds (Tower, Flip)
+  if (worldRows > WORLD_ROWS) {
+    const maxCamY = worldRows * TILE - LOGICAL_HEIGHT;
+    const targetCamY = Math.max(0, Math.min(maxCamY, p.y + p.height / 2 - LOGICAL_HEIGHT / 2));
+    const currentCamY = world.cameraY ?? 0;
+    world.cameraY = currentCamY + (targetCamY - currentCamY) * 0.18;
+  }
 
   // =========================================================================
   // 3. SPRINGS, CHECKPOINT, BLOCK BOUNCES/SPINS, COINS & DRAGON COINS
@@ -1638,7 +1799,7 @@ export function stepWorld(
       continue;
     }
 
-    if (yo.y > LOGICAL_HEIGHT + 64 || (yo.state === 'panic' && yo.stateTimer <= 0)) {
+    if (yo.y > ((world.worldRows ?? WORLD_ROWS) * TILE) + 64 || (yo.state === 'panic' && yo.stateTimer <= 0)) {
       world.yoshis.splice(yi, 1);
     }
   }
@@ -1734,7 +1895,7 @@ export function stepWorld(
       continue;
     }
 
-    if (pw.y > LOGICAL_HEIGHT + 48) {
+    if (pw.y > ((world.worldRows ?? WORLD_ROWS) * TILE) + 48) {
       world.powerups.splice(i, 1);
     }
   }
@@ -1798,7 +1959,7 @@ export function stepWorld(
       fb.bounces > 4 ||
       fb.x < world.cameraX - 64 ||
       fb.x > world.cameraX + viewportWorldWidth + 96 ||
-      fb.y > LOGICAL_HEIGHT + 24 ||
+      fb.y > ((world.worldRows ?? WORLD_ROWS) * TILE) + 24 ||
       fb.y < -32
     ) {
       if (explode) spawnSparks(world, fb.x + 6, fb.y + 6, '#fb923c', 4);
@@ -1856,7 +2017,7 @@ export function stepWorld(
       en.x += en.vx;
       en.vy += 0.48;
       en.y += en.vy;
-      if (en.y > LOGICAL_HEIGHT + 64) world.enemies.splice(i, 1);
+      if (en.y > ((world.worldRows ?? WORLD_ROWS) * TILE) + 64) world.enemies.splice(i, 1);
       continue;
     }
 
@@ -2096,7 +2257,7 @@ export function stepWorld(
       }
     }
 
-    if (en.y > LOGICAL_HEIGHT + 64 || en.x < world.cameraX - 320) {
+    if (en.y > ((world.worldRows ?? WORLD_ROWS) * TILE) + 64 || en.x < world.cameraX - 320) {
       world.enemies.splice(i, 1);
     }
   }
@@ -2229,12 +2390,67 @@ export function stepWorld(
     }
   }
 
+  // Arena Wave Progression (Star Road Coliseum)
+  if (world.arenaWave) {
+    const wave = world.arenaWave;
+    const activeEnemiesCount = world.enemies.filter(
+      (en) => en.state !== 'squashed' && en.state !== 'knocked'
+    ).length;
+    if (activeEnemiesCount <= 0 && wave.current < wave.total) {
+      wave.current += 1;
+      world.onOffState = (world.onOffState ?? 'on') === 'on' ? 'off' : 'on';
+      events.push({ type: 'sfx', id: 'arena_wave' });
+      events.push({ type: 'haptic', kind: 'medium' });
+      spawnText(world, 13 * TILE - 40, 4 * TILE, `¡OLEADA ${wave.current}/${wave.total}!`, '#fde047');
+
+      if (wave.current === 2) {
+        spawnArenaEnemy(world, 'galoomba', 2, 1);
+        spawnArenaEnemy(world, 'koopa_red', 2, 1);
+        spawnArenaEnemy(world, 'galoomba', 23, -1);
+        spawnArenaEnemy(world, 'koopa_red', 23, -1);
+        wave.remaining = 4;
+      } else if (wave.current === 3) {
+        spawnArenaEnemy(world, 'rex', 2, 1);
+        spawnArenaEnemy(world, 'paratroopa', 2, 1);
+        spawnArenaEnemy(world, 'rex', 23, -1);
+        spawnArenaEnemy(world, 'chuck', 23, -1);
+        wave.remaining = 4;
+      }
+    } else if (activeEnemiesCount <= 0 && wave.current >= wave.total) {
+      wave.remaining = 0;
+    }
+  }
+
+  // Meta bloqueada en la arena mientras queden oleadas o enemigos
+  const arenaWaveActive = Boolean(
+    world.arenaWave &&
+      world.arenaWave.current <= world.arenaWave.total &&
+      (world.arenaWave.remaining > 0 ||
+        world.enemies.some((en) => en.state !== 'squashed' && en.state !== 'knocked'))
+  );
+
+  if (arenaWaveActive && world.flagpole) {
+    const goalX = world.flagpole.x;
+    if (p.x + p.width >= goalX - 2) {
+      p.x = goalX - p.width - 6;
+      p.vx = -3.5;
+      if (!world.goalBlockedTimer) {
+        spawnText(world, goalX - 60, p.y - 24, '¡VENCE LAS 3 OLEADAS!', '#ef4444');
+        events.push({ type: 'sfx', id: 'goal_locked' });
+        events.push({ type: 'haptic', kind: 'warning' });
+        world.goalBlockedTimer = 60;
+      }
+    }
+  }
+
   // Meta cerrada si faltan gemas
   enforceGoalLock(world, events, objectiveCb);
 
   // Classic Flagpole Goal check
   if (world.flagpole && overlaps(p, world.flagpole)) {
-    startFlagpoleSequence(world, events);
+    if (!arenaWaveActive) {
+      startFlagpoleSequence(world, events);
+    }
   }
 
   // SMW Oscillating Giant Gate Tape check!
@@ -2281,4 +2497,38 @@ function updateParticlesAndTexts(world: WorldState): void {
     ft.life -= 1;
     if (ft.life <= 0) world.floatingTexts.splice(i, 1);
   }
+}
+
+function spawnArenaEnemy(world: WorldState, type: EnemyType, col: number, facing: 1 | -1): void {
+  const isTall =
+    type === 'koopa_green' ||
+    type === 'koopa_red' ||
+    type === 'paratroopa' ||
+    type === 'rex' ||
+    type === 'chuck';
+  const height = type === 'chuck' ? 42 : isTall ? 38 : 28;
+  const width = type === 'chuck' ? 32 : 26;
+  const speed = type === 'chuck' ? 1.85 : type === 'rex' ? 1.4 : 1.2;
+  const pipe = world.pipes.find((p) => Math.abs(p.x - col * TILE) < 16);
+  const spawnY = pipe ? pipe.y - height : (GROUND_ROW - 1) * TILE - height;
+  world.enemies.push({
+    id: world.nextEntityId++,
+    type,
+    state: 'walk',
+    x: col * TILE,
+    y: spawnY,
+    baseY: spawnY,
+    vx: facing * speed,
+    vy: 0,
+    width,
+    height,
+    facing,
+    onGround: true,
+    hp: type === 'rex' || type === 'chuck' ? 2 : 1,
+    stateTimer: 0,
+    kickGraceTimer: 0,
+    shellCombo: 0,
+    animTimer: 0,
+    active: true,
+  });
 }

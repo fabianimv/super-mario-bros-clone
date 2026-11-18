@@ -1,14 +1,26 @@
 // ============================================================================
-// RUTAS Y SECRETOS (Fase 3)
+// RUTAS Y SECRETOS (Fase 3) & TUBERÍAS SECRETAS (Proyecto ARGON)
 //   · Bóveda: un cuarto bajo de piedra con puerta cerrada. Adentro hay tesoro.
 //   · Llave: escondida en el punto más alto de la primera parte del nivel.
 //   · Portal secreto: en las bóvedas de los niveles X-2, lleva directo al
 //     castillo del mundo (salta el X-3).
-// La bóveda mide 3 bloques de alto: siempre se puede saltar por encima, así
-// que nunca bloquea el camino principal.
+//   · Tuberías secretas interactivas: Bonus subrooms, Warp Zone SMB 1-2, Senda Estelar.
 // ============================================================================
-import { GROUND_ROW, STAGES_PER_WORLD, TILE } from './biomes';
-import type { Block, BlockType, GameEvent, Pickup, WorldState } from './types';
+import { BIOMES, GROUND_ROW, STAGES_PER_WORLD, TILE } from './biomes';
+import type {
+  Block,
+  BlockType,
+  GameEvent,
+  InputState,
+  Pickup,
+  Pipe,
+  SubroomTheme,
+  WorldState,
+} from './types';
+import { enterPipeSubroom, exitPipeSubroom } from '../levels/subroomBuilder';
+import { buildWorldState } from '../levels/levelBuilder';
+
+export { exitPipeSubroom };
 
 const key = (col: number, row: number): number => row * 1024 + col;
 
@@ -120,11 +132,68 @@ function findKeySpot(world: WorldState, beforeCol: number): { col: number; row: 
   return null;
 }
 
+/**
+ * REGLA CERO REGRESIÓN: Etiqueta tuberías ya existentes en world.pipes
+ * sin tocar p.x, p.height, world.blocks ni world.enemies.
+ */
+export function applyPipeSecrets(world: WorldState): void {
+  if (!world.pipes || world.pipes.length === 0) return;
+  // Si las tuberías ya tienen metadatos de warp asignados, respetarlos
+  if (world.pipes.some((p) => p.warpKind != null || p.pairPipeIndex != null)) return;
+
+  const isX2 = (world.levelIndex % STAGES_PER_WORLD) + 1 === 2;
+  const sorted = [...world.pipes].sort((a, b) => a.x - b.x);
+
+  if (isX2) {
+    // Warp zone pipe en etapas X-2
+    const minX = 8 * TILE;
+    const maxX = (world.totalCols - 18) * TILE;
+    const candidates = sorted.filter((p) => p.x >= minX && p.x <= maxX);
+    const pool = candidates.length > 0 ? candidates : sorted;
+    const warpPipe = pool.find((p) => !p.hasPiranha) ?? pool[Math.floor(pool.length / 2)] ?? pool[0];
+
+    warpPipe.warpKind = 'warp_zone';
+    warpPipe.warpAccent = 'violet';
+    warpPipe.warpLabel = '▼ WARP';
+    warpPipe.subroomTheme = 'warp_chamber';
+
+    const exitCandidate = sorted.find((p) => p.x > warpPipe.x + 14 * TILE);
+    warpPipe.exitPipeCol = exitCandidate
+      ? Math.floor(exitCandidate.x / TILE)
+      : Math.min(world.totalCols - 12, Math.floor(warpPipe.x / TILE) + 16);
+  } else if (world.pipes.length >= 1) {
+    // Bonus subroom en otras etapas
+    const minX = 8 * TILE;
+    const maxX = (world.totalCols - 20) * TILE;
+    const candidates = sorted.filter((p) => p.x >= minX && p.x <= maxX);
+    const pool = candidates.length > 0 ? candidates : sorted;
+    const bonusPipe = pool.find((p) => !p.hasPiranha) ?? pool[0];
+
+    const themes: SubroomTheme[] = ['coin_vault', 'star_sanctuary', 'cloud_heaven'];
+    const themeIdx = (world.levelIndex + (world.partition ? world.partition.length : 0)) % themes.length;
+
+    bonusPipe.warpKind = 'subroom';
+    bonusPipe.warpAccent = 'gold';
+    bonusPipe.warpLabel = '▼ BONUS';
+    bonusPipe.subroomTheme = themes[themeIdx];
+
+    const exitCandidate = sorted.find((p) => p.x > bonusPipe.x + 16 * TILE)
+      ?? sorted.find((p) => p.x > bonusPipe.x + 8 * TILE);
+    bonusPipe.exitPipeCol = exitCandidate
+      ? Math.floor(exitCandidate.x / TILE)
+      : Math.min(world.totalCols - 12, Math.floor(bonusPipe.x / TILE) + 16);
+  }
+}
+
 export function applyStageSecrets(world: WorldState): WorldState {
   world.hasKey = false;
   world.vaultOpened = false;
   world.warpTo = null;
   if (!world.pickups) world.pickups = [];
+
+  // Etiquetar tuberías secretas (bonus/warp) en tuberías existentes
+  applyPipeSecrets(world);
+
   if (!stageHasVault(world.levelIndex, world.partition)) return world;
 
   const c = findVaultCol(world);
@@ -175,7 +244,169 @@ export function applyStageSecrets(world: WorldState): WorldState {
 }
 
 // ============================================================================
-// ACTUALIZACIÓN POR FRAME
+// MECÁNICA DE TUBERÍAS SECRETAS (checkPipeEntry & stepPipeTransition)
+// ============================================================================
+
+/** Detecta si el jugador pulsa ▼ sobre una tubería con warpKind o pairPipeIndex */
+export function checkPipeEntry(
+  world: WorldState,
+  input: InputState,
+  events: GameEvent[]
+): boolean {
+  if (world.status !== 'playing') return false;
+  const p = world.player;
+  if (p.dead) return false;
+  if (!p.onGround) return false;
+
+  const gDir = world.gravityDir ?? 1;
+  const downPressed = gDir === 1 ? input.down : input.up;
+  if (!downPressed) return false;
+
+  for (const pipe of world.pipes) {
+    if (!pipe.warpKind && pipe.pairPipeIndex == null) continue;
+    if (pipe.visited) continue;
+
+    // Centro del jugador apoyado dentro del borde superior del tubo
+    const centerX = p.x + p.width / 2;
+    const hAligned = centerX >= pipe.x + 4 && centerX <= pipe.x + pipe.width - 4;
+    if (!hAligned) continue;
+
+    // Pies alineados con la boca del tubo
+    let vAligned = false;
+    if (gDir === 1) {
+      vAligned = Math.abs((p.y + p.height) - pipe.y) <= 8;
+    } else {
+      vAligned = Math.abs(p.y - (pipe.y + pipe.height)) <= 8;
+    }
+    if (!vAligned) continue;
+
+    // Iniciar descenso en la tubería
+    world.status = 'pipe_enter';
+    world.statusTimer = 30;
+    world.activeWarpPipe = pipe;
+    p.x = pipe.x + (pipe.width - p.width) / 2;
+    p.vx = 0;
+    p.vy = 0;
+    p.crouching = true;
+
+    events.push({ type: 'sfx', id: 'pipe_warp' });
+    events.push({ type: 'haptic', kind: 'heavy' });
+    return true;
+  }
+
+  return false;
+}
+
+/** Ejecuta la animación frame a frame de pipe_enter y pipe_exit */
+export function stepPipeTransition(world: WorldState, events: GameEvent[]): void {
+  const gDir = world.gravityDir ?? 1;
+  const p = world.player;
+
+  if (world.status === 'pipe_enter') {
+    p.vx = 0;
+    p.vy = 0;
+    p.crouching = true;
+    p.y += 1.4 * gDir;
+    world.statusTimer--;
+
+    if (world.statusTimer <= 0) {
+      const pipe = world.activeWarpPipe;
+      if (!pipe) {
+        world.status = 'playing';
+        return;
+      }
+
+      // 1. Teletransporte entre tubos hermanos (modo Flip)
+      if (pipe.pairPipeIndex != null && world.pipes[pipe.pairPipeIndex]) {
+        const targetPipe = world.pipes[pipe.pairPipeIndex];
+        p.x = targetPipe.x + (targetPipe.width - p.width) / 2;
+        p.y = targetPipe.y - p.height + 28 * gDir;
+        world.activeWarpPipe = targetPipe;
+        world.status = 'pipe_exit';
+        world.statusTimer = 24;
+        p.crouching = false;
+        events.push({ type: 'sfx', id: 'pipe_warp' });
+        return;
+      }
+
+      // 2. Retorno de sub-sala al nivel principal
+      if (pipe.warpKind === 'return') {
+        exitPipeSubroom(world, events);
+        return;
+      }
+
+      // 3. Salto a mundo secreto (Star Road)
+      if (pipe.warpKind === 'secret_world') {
+        events.push({ type: 'secret_unlocked', partition: 'star_road' });
+        const targetPart = pipe.warpTargetPartition ?? 'star_road';
+        const targetLvl = pipe.warpTargetLevel ?? 0;
+        const carry = {
+          score: world.score,
+          highScore: world.highScore,
+          coins: world.coins,
+          lives: world.lives,
+          powerState: p.powerState,
+          doubleJumpAssist: world.doubleJumpAssist,
+        };
+        const nextWorld = buildWorldState(targetLvl, carry, targetPart);
+        Object.assign(world, nextWorld);
+        const bgm = BIOMES[world.biomeId]?.bgm ?? 'dim_theme';
+        events.push({ type: 'bgm', track: bgm });
+        return;
+      }
+
+      // 4. Salto de mundo desde Warp Chamber (SMB 1-2 style)
+      if (pipe.warpKind === 'warp_zone' && pipe.warpTargetLevel != null && world.subArea === 'warp_zone') {
+        const carry = {
+          score: world.score,
+          highScore: world.highScore,
+          coins: world.coins,
+          lives: world.lives,
+          powerState: p.powerState,
+          doubleJumpAssist: world.doubleJumpAssist,
+        };
+        const nextWorld = buildWorldState(pipe.warpTargetLevel, carry, world.partition);
+        Object.assign(world, nextWorld);
+        const bgm = BIOMES[world.biomeId]?.bgm ?? 'overworld';
+        events.push({ type: 'bgm', track: bgm });
+        return;
+      }
+
+      // 5. Entrada a sub-sala bonus o cámara warp zone
+      if (pipe.warpKind === 'subroom' || pipe.warpKind === 'warp_zone') {
+        pipe.visited = true;
+        enterPipeSubroom(world, pipe, events);
+        return;
+      }
+
+      // Fallback
+      world.status = 'playing';
+      world.activeWarpPipe = null;
+    }
+  } else if (world.status === 'pipe_exit') {
+    p.vx = 0;
+    p.vy = 0;
+    p.crouching = false;
+    p.y -= 1.25 * gDir;
+    world.statusTimer--;
+
+    if (world.statusTimer <= 0) {
+      world.status = 'playing';
+      p.onGround = true;
+      if (world.activeWarpPipe) {
+        if (gDir === 1) {
+          p.y = world.activeWarpPipe.y - p.height;
+        } else {
+          p.y = world.activeWarpPipe.y + world.activeWarpPipe.height;
+        }
+      }
+      world.activeWarpPipe = null;
+    }
+  }
+}
+
+// ============================================================================
+// ACTUALIZACIÓN POR FRAME (Secretos y Bóvedas)
 // ============================================================================
 export interface SecretCallbacks {
   removeBlock: (b: Block) => void;

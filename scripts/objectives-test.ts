@@ -77,6 +77,9 @@ for (const [part, total] of ALL_MODES) {
     mirage: 'recover',
     echo: 'reach',
     dimension: 'reach',
+    tower: 'reach',
+    flip: 'collect',
+    star_road: 'reach',
   };
   const firstObjective = getStageObjective(0, part);
   assert(

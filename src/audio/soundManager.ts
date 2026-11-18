@@ -49,6 +49,10 @@ const ALL_SFX: SfxId[] = [
   'chase_growl',
   'lava_rise',
   'goal_locked',
+  'pipe_warp',
+  'gravity_flip',
+  'switch_toggle',
+  'arena_wave',
 ];
 
 const ALL_BGM: BgmTrackId[] = [
@@ -84,6 +88,10 @@ const POOL_SIZES: Partial<Record<SfxId, number>> = {
   wall_jump: 2,
   gem: 2,
   clock: 2,
+  pipe_warp: 2,
+  gravity_flip: 2,
+  switch_toggle: 2,
+  arena_wave: 2,
 };
 
 class RetroSoundManager {
@@ -107,7 +115,7 @@ class RetroSoundManager {
           interruptionMode: 'mixWithOthers',
         });
 
-        const cacheDir = new Directory(Paths.cache, 'super_plomero_audio_v3');
+        const cacheDir = new Directory(Paths.cache, 'super_plomero_audio_v4');
         if (!cacheDir.exists) {
           cacheDir.create({ idempotent: true });
         }

@@ -106,6 +106,13 @@ const ENEMY_COLORS: Record<string, string> = {
   thief: '#a21caf',
 };
 
+const PIPE_ACCENT_COLORS: Record<string, string> = {
+  gold: '#fbbf24',
+  violet: '#a855f7',
+  crimson: '#ef4444',
+  emerald: '#10b981',
+};
+
 /** Rampa de 3 tonos para el sombreado tipo cel (bandas duras de luz). */
 function toonRamp(): THREE.DataTexture {
   const steps = new Uint8Array([110, 110, 110, 255, 185, 185, 185, 255, 255, 255, 255, 255]);
@@ -222,15 +229,15 @@ export class World3DScene {
 
     this.blocks = new Batch(bevelBox, toon(), 1400, true);
     this.slabs = new Batch(slabBox, toon(), 2600, true);
-    this.glowBlocks = new Batch(box, glow(), 400);
+    this.glowBlocks = new Batch(box, glow(), 600);
     this.cylinders = new Batch(cyl, toon(), 500);
     this.spheres = new Batch(sph, toon(), 900);
-    this.glowSpheres = new Batch(sph, glow(), 300);
+    this.glowSpheres = new Batch(sph, glow(), 500);
     this.cones = new Batch(cone, toon(), 300);
     this.gems = new Batch(oct, toon(false), 160);
     // Copas facetadas de los árboles (icosaedro: caras planas, look low-poly)
     this.icos = new Batch(new THREE.IcosahedronGeometry(0.5, 0), toon(false), 400);
-    this.rings = new Batch(torus, toon(false), 80);
+    this.rings = new Batch(torus, toon(false), 200);
     // Contorno oscuro de personajes (casco invertido) y sombras de contacto
     this.outlines = new Batch(
       sph,
@@ -245,7 +252,7 @@ export class World3DScene {
     this.ghost = new Batch(
       box,
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false }),
-      40
+      300
     );
     this.bits = new Batch(box, glow(), 500);
     for (const b of [
@@ -341,18 +348,32 @@ export class World3DScene {
     const frame = world.frameCount;
 
     // --- Cámara: mismo encuadre que el 2D, con un poco de inclinación ---
+    const isCorridor = world.cameraMode === 'corridor3d';
     const cx = toX(world.cameraX + viewW / 2);
-    const cy = toY(LOGICAL_HEIGHT / 2 - WORLD_VERTICAL_LIFT);
+    const camY = world.cameraY ?? 0;
+    const cy = toY(camY + LOGICAL_HEIGHT / 2 - WORLD_VERTICAL_LIFT);
     const shake = world.screenShake > 0 ? Math.sin(frame * 1.9) * world.screenShake * U : 0;
     this.camera.aspect = screenW / Math.max(1, screenH);
-    // La cámara mira levemente hacia abajo, pero el centro de la vista queda
-    // donde lo pone el 2D, así el suelo no baja hasta los controles táctiles
-    this.camera.position.set(cx + shake, cy + 1.6, CAM_DIST);
-    this.camera.lookAt(cx, cy - 0.9, 0);
+
+    if (isCorridor) {
+      const hx = toX(world.player.x + world.player.width / 2);
+      const hy = toY(world.player.y + world.player.height / 2);
+      this.camera.position.set(hx - 6.2, hy + 2.6, 5.4);
+      this.camera.lookAt(hx + 11, hy - 0.4, -1.0);
+      this.sky.position.set(hx + 20, cy + 0.875, -50);
+      this.stars.position.set(hx + 20, cy + 6.875, -45);
+    } else {
+      // La cámara mira levemente hacia abajo, pero el centro de la vista queda
+      // donde lo pone el 2D, así el suelo no baja hasta los controles táctiles
+      this.camera.position.set(cx + shake, cy + 1.6, CAM_DIST);
+      this.camera.lookAt(cx, cy - 0.9, 0);
+      this.sky.position.x = cx;
+      this.sky.position.y = cy + 0.875;
+      this.stars.position.x = cx * 0.9;
+      this.stars.position.y = cy + 6.875;
+    }
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld(); // para projectToScreen antes de dibujar
-    this.sky.position.x = cx;
-    this.stars.position.x = cx * 0.9;
 
     const all = [
       this.icos,
@@ -372,8 +393,9 @@ export class World3DScene {
     ];
     for (const batch of all) batch.begin();
 
-    const startCol = Math.max(0, Math.floor(world.cameraX / TILE) - 6);
-    const endCol = Math.min(world.totalCols - 1, Math.ceil((world.cameraX + viewW) / TILE) + 6);
+    const colMargin = isCorridor ? 14 : 6;
+    const startCol = Math.max(0, Math.floor(world.cameraX / TILE) - colMargin);
+    const endCol = Math.min(world.totalCols - 1, Math.ceil((world.cameraX + viewW) / TILE) + colMargin);
     const inView = (px: number, w = TILE) => px + w > (startCol - 2) * TILE && px < (endCol + 2) * TILE;
 
     // --- Decorado de fondo: 3 capas de colinas, nubes y arbustos ---
@@ -428,8 +450,14 @@ export class World3DScene {
 
     // --- Bloques ---
     const lavaRise = lavaTideRise(world);
+    const isOn = (world.onOffState ?? 'on') === 'on';
+    const worldRows = world.worldRows ?? 14;
+    const maxRow = worldRows + 1;
+    const startRow = Math.max(0, Math.floor(camY / TILE) - 4);
+    const endRow = Math.min(maxRow, Math.ceil((camY + LOGICAL_HEIGHT) / TILE) + 4);
+
     for (let col = startCol; col <= endCol; col++) {
-      for (let row = 0; row < 15; row++) {
+      for (let row = startRow; row < endRow; row++) {
         const blk = world.blockGrid.get(row * 1024 + col);
         if (!blk || blk.type === 'hidden') continue;
         const x = col + 0.5;
@@ -465,13 +493,43 @@ export class World3DScene {
             break;
           case 'bridge': {
             const shakeX = blk.crumbleTimer ? Math.sin(frame * 2.1) * 0.06 : 0;
-            this.slabs.add(x + shakeX, y + 0.3, 0, 1, 0.3, 1.4, blk.crumble ? '#a16207' : '#b45309');
+            this.slabs.add(x + shakeX, y + 0.3, 0, 1, 0.3, isCorridor ? 3.2 : 1.4, blk.crumble ? '#a16207' : '#b45309');
             break;
           }
           case 'lock':
             this.blocks.add(x, y, 0, 0.94, 0.94, 0.94, '#78350f');
             if (row === 10) this.glowBlocks.add(x, y, 0.5, 0.35, 0.4, 0.05, '#facc15');
             break;
+          case 'on_off_switch': {
+            const color = isOn ? '#ef4444' : '#3b82f6';
+            const inner = isOn ? '#fee2e2' : '#dbeafe';
+            this.blocks.add(x, y, 0, 0.94, 0.94, 0.94, color);
+            this.glowBlocks.add(x, y, 0.48, 0.42, 0.42, 0.05, inner);
+            this.glowSpheres.add(x, y, 0.5, 0.22, 0.22, 0.06, color);
+            break;
+          }
+          case 'on_block': {
+            const bz = isCorridor ? 3.2 : 0.96;
+            if (isOn) {
+              this.blocks.add(x, y, 0, 0.96, 0.96, bz, '#ef4444');
+              this.glowBlocks.add(x, y, bz / 2 + 0.01, 0.65, 0.65, 0.03, '#fca5a5');
+            } else {
+              this.ghost.add(x, y, 0, 0.92, 0.92, bz, '#ef4444');
+              this.bits.add(x, y, 0, 0.35, 0.35, 0.35, '#f87171');
+            }
+            break;
+          }
+          case 'off_block': {
+            const bz = isCorridor ? 3.2 : 0.96;
+            if (!isOn) {
+              this.blocks.add(x, y, 0, 0.96, 0.96, bz, '#3b82f6');
+              this.glowBlocks.add(x, y, bz / 2 + 0.01, 0.65, 0.65, 0.03, '#93c5fd');
+            } else {
+              this.ghost.add(x, y, 0, 0.92, 0.92, bz, '#3b82f6');
+              this.bits.add(x, y, 0, 0.35, 0.35, 0.35, '#60a5fa');
+            }
+            break;
+          }
         }
       }
     }
@@ -488,8 +546,24 @@ export class World3DScene {
     for (const p of world.pipes) {
       if (!inView(p.x, p.width)) continue;
       const h = p.height * U;
-      this.cylinders.add(toX(p.x + p.width / 2), toY(p.y) - h / 2, 0, 1.6, h, 1.6, b.pipeMain);
-      this.cylinders.add(toX(p.x + p.width / 2), toY(p.y) - 0.25, 0, 1.95, 0.5, 1.95, b.pipeLight);
+      const x = toX(p.x + p.width / 2);
+      this.cylinders.add(x, toY(p.y) - h / 2, 0, 1.6, h, 1.6, b.pipeMain);
+      this.cylinders.add(x, toY(p.y) - 0.25, 0, 1.95, 0.5, 1.95, b.pipeLight);
+
+      if (p.warpKind || p.pairPipeIndex != null || p.warpAccent) {
+        let accentKey: string = p.warpAccent ?? 'gold';
+        if (!p.warpAccent) {
+          if (p.pairPipeIndex != null) accentKey = 'violet';
+          else if (p.warpKind === 'secret_world') accentKey = 'crimson';
+          else if (p.warpKind === 'warp_zone') accentKey = 'violet';
+          else if (p.warpKind === 'return') accentKey = 'emerald';
+          else if (p.warpKind === 'subroom') accentKey = 'gold';
+        }
+        const accentColor = PIPE_ACCENT_COLORS[accentKey] ?? '#fbbf24';
+        const pulse = 0.95 + Math.sin(frame * 0.15 + p.x * 0.05) * 0.15;
+        this.rings.add(x, toY(p.y) + 0.02, 0, 2.0, 2.0, 1.4, accentColor, Math.PI / 2, 0, 0);
+        this.glowSpheres.add(x, toY(p.y) + 0.08, 0, 1.4 * pulse, 0.22, 1.4 * pulse, accentColor);
+      }
     }
     for (const sp of world.springs) {
       if (!inView(sp.x)) continue;
@@ -510,11 +584,12 @@ export class World3DScene {
       const glow = platformGlow(pl, frame);
       const x = toX(pl.x + pl.width / 2);
       const y = toY(pl.y) - 0.2;
+      const sz = isCorridor ? 3.2 : 1.3;
       if (pl.blink && glow === 0) {
-        this.ghost.add(x, y, 0, pl.width * U, 0.3, 1.2, '#bef264');
+        this.ghost.add(x, y, 0, pl.width * U, 0.3, isCorridor ? 3.2 : 1.2, '#bef264');
         continue;
       }
-      this.slabs.add(x, y, 0, pl.width * U, 0.4, 1.3, glow < 1 ? '#57534e' : '#b45309');
+      this.slabs.add(x, y, 0, pl.width * U, 0.4, sz, glow < 1 ? '#57534e' : '#b45309');
       if (pl.blink) {
         for (let k = 0; k < Math.round(pl.width / 16); k++) {
           this.glowSpheres.add(toX(pl.x + 8 + k * 16), y + 0.45 + Math.sin(frame * 0.12 + k) * 0.08, 0.3, 0.12, 0.12, 0.12, '#d9f99d');
@@ -723,7 +798,8 @@ export class World3DScene {
   private addBlob(world: WorldState, px: number, feetPy: number, widthPx: number): void {
     const col = Math.floor(px / TILE);
     let groundRow = -1;
-    for (let r = Math.max(0, Math.floor((feetPy - 2) / TILE)); r <= GROUND_ROW + 1; r++) {
+    const maxGroundRow = (world.worldRows ?? 14) > 14 ? (world.worldRows ?? 14) + 1 : GROUND_ROW + 1;
+    for (let r = Math.max(0, Math.floor((feetPy - 2) / TILE)); r <= maxGroundRow; r++) {
       const blk = world.blockGrid.get(r * 1024 + col);
       if (blk && blk.type !== 'hidden') {
         groundRow = r;
@@ -811,11 +887,18 @@ export class World3DScene {
     const star = p.starTimer > 0;
     const starColor = `hsl(${(frame * 12) % 360}, 90%, 60%)`;
     const fire = p.powerState === 2;
-    this.hero.update(p, frame, toX(p.x + p.width / 2), toY(p.y + p.height), p.height * U * HERO_SCALE, {
+    const inverted = (world.gravityDir ?? 1) === -1;
+    const feetY = inverted ? toY(p.y) : toY(p.y + p.height);
+
+    this.hero.update(p, frame, toX(p.x + p.width / 2), feetY, p.height * U * HERO_SCALE, {
       shirt: star ? starColor : fire ? '#ffffff' : HERO_RED,
       cap: star ? starColor : fire ? '#ffffff' : HERO_RED,
       overalls: fire ? HERO_RED : '#2b59d9',
     });
+
+    if (inverted) {
+      this.hero.root.rotation.z = Math.PI;
+    }
     return true;
   }
 

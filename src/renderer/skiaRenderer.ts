@@ -16,13 +16,14 @@ import {
   GROUND_ROW,
   LOGICAL_HEIGHT,
   TILE,
+  WORLD_ROWS,
   WORLD_VERTICAL_LIFT,
   type BiomeDefinition,
 } from '../engine/biomes';
 import { gridKey } from '../levels/levelBuilder';
 import { lavaTideRise, platformGlow } from '../engine/mechanics';
 import { isGoalLocked } from '../engine/objectives';
-import type { Enemy, Player, WorldState } from '../engine/types';
+import type { Block, Enemy, Pipe, Player, WorldState } from '../engine/types';
 
 export class SkiaWorldRenderer {
   private recorder = Skia.PictureRecorder();
@@ -94,19 +95,26 @@ export class SkiaWorldRenderer {
     const shakeY =
       world.screenShake > 0 ? Math.cos(world.frameCount * 2.3) * (world.screenShake * 0.6) : 0;
     const camX = Math.round((world.cameraX + shakeX) * 2) / 2;
+    const camY = Math.round((world.cameraY ?? 0) * 2) / 2;
+    const worldRows = world.worldRows ?? WORLD_ROWS;
 
     // 2. Celestial Atmosphere
     this.drawCelestialBackdrop(canvas, world, biome, viewportWorldW);
 
     // 3. Parallax Scenery Layer (lifted cleanly with playfield!)
     canvas.save();
-    canvas.translate(0, -WORLD_VERTICAL_LIFT);
+    canvas.translate(0, (worldRows > WORLD_ROWS ? -camY : 0) - WORLD_VERTICAL_LIFT);
     this.drawSceneryLayer(canvas, world, biome, camX, viewportWorldW);
     canvas.restore();
 
     // Enter World Camera Transform (lifted by WORLD_VERTICAL_LIFT so ground sits clear above lower controls!)
     canvas.save();
-    canvas.translate(-camX, shakeY - WORLD_VERTICAL_LIFT);
+    canvas.translate(-camX, shakeY - camY - WORLD_VERTICAL_LIFT);
+
+    // 3b. Indicadores luminosos de portal lateral (Tower wrapHorizontal)
+    if (world.wrapHorizontal) {
+      this.drawWrapPortals(canvas, world, camY);
+    }
 
     // 4. Left & Right Seamless Decorative Border Ground & Start Fence
     this.drawBorderTerrain(canvas, atlas, world, camX, viewportWorldW);
@@ -136,12 +144,12 @@ export class SkiaWorldRenderer {
 
     this.drawLowGravZones(canvas, world, camX, viewportWorldW);
     this.drawLavaPools(canvas, atlas, world, startCol, endCol);
-    this.drawPipes(canvas, atlas, world, camX, viewportWorldW);
+    this.drawPipes(canvas, atlas, world, camX, viewportWorldW, pixelFont);
     this.drawMovingPlatforms(canvas, atlas, world, camX, viewportWorldW);
     this.drawSprings(canvas, atlas, world);
     this.drawWagerAltars(canvas, world, camX, viewportWorldW);
     this.drawEcho(canvas, world);
-    this.drawVisibleBlocks(canvas, atlas, world, startCol, endCol);
+    this.drawVisibleBlocks(canvas, atlas, world, startCol, endCol, camY);
     this.drawIcicles(canvas, world, camX, viewportWorldW);
 
     // 9. Red Berries, Coins, SMW Dragon Coins & Active Powerups
@@ -194,7 +202,26 @@ export class SkiaWorldRenderer {
 
     // 13. Hero Plomero (including Riding Yoshi + Extending Tongue + Golden SMW Cape!)
     if (!world.player.enteringCastle) {
+      const isFlipped = (world.gravityDir ?? 1) === -1;
+      if (isFlipped) {
+        const centerY = world.player.y + world.player.height / 2;
+        canvas.save();
+        canvas.translate(0, centerY);
+        canvas.scale(1, -1);
+        canvas.translate(0, -centerY);
+      }
       this.drawHero(canvas, atlas, world, world.player);
+      if (isFlipped) {
+        canvas.restore();
+      }
+    }
+
+    // Tuberías secretas: oclusión de Plomero hundiéndose/emergiendo dentro del tubo
+    if (
+      (world.status === 'pipe_enter' || world.status === 'pipe_exit') &&
+      world.activeWarpPipe
+    ) {
+      this.drawSinglePipe(canvas, atlas, world, world.activeWarpPipe, pixelFont, true);
     }
 
     // 14. Player & Yoshi Fireballs
@@ -228,6 +255,11 @@ export class SkiaWorldRenderer {
 
     // 15b. Llave inglesa en vuelo
     this.drawWrench(canvas, world);
+
+    // 15c. Magma ascendente / Marea de oscuridad luminosa (Modo Torre)
+    if (world.risingHazardY != null) {
+      this.drawRisingHazard(canvas, world, camX, viewportWorldW);
+    }
 
     // 16. Sombra que persigue (por encima de todo el mundo)
     this.drawChaseWall(canvas, world);
@@ -327,6 +359,28 @@ export class SkiaWorldRenderer {
   ): void {
     const prefix = world.biomeId;
     const biome = BIOMES[world.biomeId];
+    const worldRows = world.worldRows ?? WORLD_ROWS;
+
+    // En modos verticales / mundos altos (worldRows > 14), no dibujar suelo infinito salvo en las filas finales de la base
+    if (worldRows > WORLD_ROWS) {
+      const baseRow = worldRows - 2;
+      const camY = world.cameraY ?? 0;
+      if (camY + LOGICAL_HEIGHT >= (baseRow - 1) * TILE) {
+        if (camX < 0) {
+          const minLeftCol = Math.floor(camX / TILE) - 1;
+          for (let col = minLeftCol; col < 0; col++) {
+            this.blitSprite(canvas, atlas, `${prefix}_ground_top`, col * TILE, baseRow * TILE, TILE, TILE, false);
+            this.blitSprite(canvas, atlas, `${prefix}_ground_deep`, col * TILE, (baseRow + 1) * TILE, TILE, TILE, false);
+          }
+        }
+        const maxVisCol = Math.ceil((camX + viewportW) / TILE) + 1;
+        for (let col = world.totalCols; col <= maxVisCol; col++) {
+          this.blitSprite(canvas, atlas, `${prefix}_ground_top`, col * TILE, baseRow * TILE, TILE, TILE, false);
+          this.blitSprite(canvas, atlas, `${prefix}_ground_deep`, col * TILE, (baseRow + 1) * TILE, TILE, TILE, false);
+        }
+      }
+      return;
+    }
 
     // Left start terrace (cols -10..-1) so negative cameraX renders rich natural ground!
     if (camX < 0) {
@@ -491,11 +545,12 @@ export class SkiaWorldRenderer {
     const fp = world.flagpole;
     if (!fp) return;
 
+    const baseBlockY = fp.y + fp.height - TILE;
     this.fillPaint.setColor(Skia.Color('#141013'));
-    canvas.drawRect(Skia.XYWHRect(fp.x - 10, GROUND_ROW * TILE - TILE, TILE, TILE), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(fp.x - 10, baseBlockY, TILE, TILE), this.fillPaint);
     this.fillPaint.setColor(Skia.Color('#d97706'));
     canvas.drawRect(
-      Skia.XYWHRect(fp.x - 8, GROUND_ROW * TILE - TILE + 2, TILE - 4, TILE - 4),
+      Skia.XYWHRect(fp.x - 8, baseBlockY + 2, TILE - 4, TILE - 4),
       this.fillPaint
     );
 
@@ -614,26 +669,123 @@ export class SkiaWorldRenderer {
     atlas: SkiaSpriteAtlas,
     world: WorldState,
     camX: number,
-    viewportW: number
+    viewportW: number,
+    pixelFont: SkFont | null
   ): void {
-    const prefix = world.biomeId;
     for (const p of world.pipes) {
       if (p.x + p.width < camX - TILE || p.x > camX + viewportW + TILE) continue;
-      const rows = Math.round(p.height / TILE);
-      this.blitSprite(canvas, atlas, `${prefix}_pipe_tl`, p.x, p.y, TILE, TILE, false);
-      this.blitSprite(canvas, atlas, `${prefix}_pipe_tr`, p.x + TILE, p.y, TILE, TILE, false);
-      for (let r = 1; r < rows; r++) {
-        this.blitSprite(canvas, atlas, `${prefix}_pipe_bl`, p.x, p.y + r * TILE, TILE, TILE, false);
-        this.blitSprite(
-          canvas,
-          atlas,
-          `${prefix}_pipe_br`,
-          p.x + TILE,
-          p.y + r * TILE,
-          TILE,
-          TILE,
-          false
-        );
+      this.drawSinglePipe(canvas, atlas, world, p, pixelFont, false);
+    }
+  }
+
+  private drawSinglePipe(
+    canvas: SkCanvas,
+    atlas: SkiaSpriteAtlas,
+    world: WorldState,
+    p: Pipe,
+    pixelFont: SkFont | null,
+    isHeroOcclusion = false
+  ): void {
+    const prefix = world.biomeId;
+    const rows = Math.round(p.height / TILE);
+    this.blitSprite(canvas, atlas, `${prefix}_pipe_tl`, p.x, p.y, TILE, TILE, false);
+    this.blitSprite(canvas, atlas, `${prefix}_pipe_tr`, p.x + TILE, p.y, TILE, TILE, false);
+    for (let r = 1; r < rows; r++) {
+      this.blitSprite(canvas, atlas, `${prefix}_pipe_bl`, p.x, p.y + r * TILE, TILE, TILE, false);
+      this.blitSprite(
+        canvas,
+        atlas,
+        `${prefix}_pipe_br`,
+        p.x + TILE,
+        p.y + r * TILE,
+        TILE,
+        TILE,
+        false
+      );
+    }
+
+    // Tuberías secretas / atajos con warpKind o pairPipeIndex
+    if (!p.warpKind && p.pairPipeIndex == null) return;
+
+    const accentColor =
+      p.warpAccent === 'violet'
+        ? '#a855f7'
+        : p.warpAccent === 'crimson'
+        ? '#ef4444'
+        : p.warpAccent === 'emerald'
+        ? '#22c55e'
+        : '#facc15';
+
+    const pulse = Math.sin(world.frameCount * 0.14 + p.x * 0.05) * 1.5;
+
+    // Halo superior luminoso
+    this.fillPaint.setColor(Skia.Color(accentColor + '55'));
+    canvas.drawRect(
+      Skia.XYWHRect(p.x - 4 - pulse, p.y - 4 - pulse, p.width + 8 + pulse * 2, 7 + pulse * 2),
+      this.fillPaint
+    );
+
+    // Aro / reborde metálico superior distintivo
+    this.fillPaint.setColor(Skia.Color('#090d16'));
+    canvas.drawRect(Skia.XYWHRect(p.x - 2, p.y - 3, p.width + 4, 6), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color(accentColor));
+    canvas.drawRect(Skia.XYWHRect(p.x - 1, p.y - 2, p.width + 2, 4), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawRect(Skia.XYWHRect(p.x + 6, p.y - 2, p.width - 20, 1.5), this.fillPaint);
+
+    // Si ya fue visitada o es solo oclusión del héroe, no dibuja cartel ni chispas flotantes
+    if (p.visited || isHeroOcclusion) return;
+
+    // Chispas animadas saliendo del tubo
+    for (let i = 0; i < 4; i++) {
+      const sparkPhase = (world.frameCount * 1.3 + i * 29 + p.x) % 45;
+      const sparkX = p.x + 8 + ((i * 19 + p.x) % (p.width - 16));
+      const sparkY = p.y - sparkPhase * 0.7;
+      const sparkAlpha = Math.max(0, 1 - sparkPhase / 45);
+      if (sparkAlpha > 0.08) {
+        this.fillPaint.setColor(Skia.Color(accentColor));
+        const sz = i % 2 === 0 ? 3 : 2;
+        canvas.drawRect(Skia.XYWHRect(sparkX - sz / 2, sparkY - sz / 2, sz, sz), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#ffffff'));
+        canvas.drawRect(Skia.XYWHRect(sparkX - 0.5, sparkY - 0.5, 1, 1), this.fillPaint);
+      }
+    }
+
+    // Cartel / etiqueta flotante p.warpLabel
+    if (p.warpLabel) {
+      const labelText = p.warpLabel;
+      const bob = Math.sin(world.frameCount * 0.09 + p.x * 0.1) * 2.5;
+      const badgeH = 18;
+      const badgeW = labelText.length * 8 + 14;
+      const badgeX = p.x + (p.width - badgeW) / 2;
+      const badgeY = p.y - 28 + bob;
+
+      // Sombra
+      this.fillPaint.setColor(Skia.Color('rgba(0, 0, 0, 0.65)'));
+      canvas.drawRect(Skia.XYWHRect(badgeX + 1, badgeY + 1, badgeW, badgeH), this.fillPaint);
+
+      // Fondo oscuro
+      this.fillPaint.setColor(Skia.Color('#090d16'));
+      canvas.drawRect(Skia.XYWHRect(badgeX, badgeY, badgeW, badgeH), this.fillPaint);
+
+      // Borde acento metálico
+      this.strokePaint.setColor(Skia.Color(accentColor));
+      this.strokePaint.setStrokeWidth(1.5);
+      canvas.drawRect(Skia.XYWHRect(badgeX, badgeY, badgeW, badgeH), this.strokePaint);
+
+      // Flecha indicadora ▼ bajo el cartel
+      this.fillPaint.setColor(Skia.Color(accentColor));
+      const cx = p.x + p.width / 2;
+      canvas.drawRect(Skia.XYWHRect(cx - 3, badgeY + badgeH, 6, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(cx - 2, badgeY + badgeH + 2, 4, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(cx - 1, badgeY + badgeH + 4, 2, 2), this.fillPaint);
+
+      // Texto de etiqueta
+      if (pixelFont) {
+        this.fillPaint.setColor(Skia.Color('#000000'));
+        canvas.drawText(labelText, badgeX + 8, badgeY + 14, this.fillPaint, pixelFont);
+        this.fillPaint.setColor(Skia.Color(accentColor));
+        canvas.drawText(labelText, badgeX + 7, badgeY + 13, this.fillPaint, pixelFont);
       }
     }
   }
@@ -733,12 +885,16 @@ export class SkiaWorldRenderer {
     atlas: SkiaSpriteAtlas,
     world: WorldState,
     startCol: number,
-    endCol: number
+    endCol: number,
+    camY: number
   ): void {
     const qFrame = (Math.floor(world.frameCount / 10) % 3) + 1;
     const prefix = world.biomeId;
+    const worldRows = world.worldRows ?? WORLD_ROWS;
+    const startRow = Math.max(0, Math.floor(camY / TILE) - 1);
+    const endRow = Math.min(worldRows + 1, startRow + WORLD_ROWS + 4);
 
-    for (let row = 0; row < 14; row++) {
+    for (let row = startRow; row < endRow; row++) {
       for (let col = startCol; col <= endCol; col++) {
         const b = world.blockGrid.get(gridKey(col, row));
         if (!b || b.type === 'hidden') continue;
@@ -746,6 +902,19 @@ export class SkiaWorldRenderer {
         if (b.type === 'rotating' && b.spinTimer > 0) {
           const flip = Math.floor(b.spinTimer / 4) % 2 === 1;
           this.blitSprite(canvas, atlas, 'tile_rotating_spin', b.x, b.y, TILE, TILE, flip);
+          continue;
+        }
+
+        if (b.type === 'on_off_switch') {
+          this.drawOnOffSwitch(canvas, world, b);
+          continue;
+        }
+        if (b.type === 'on_block') {
+          this.drawOnBlock(canvas, world, b);
+          continue;
+        }
+        if (b.type === 'off_block') {
+          this.drawOffBlock(canvas, world, b);
           continue;
         }
 
@@ -811,18 +980,340 @@ export class SkiaWorldRenderer {
         }
 
         // Extend deep ground 1 row lower so WORLD_VERTICAL_LIFT shows continuous earth to bottom of screen!
-        if (row === GROUND_ROW + 1 && b.type === 'ground_deep') {
+        const isBottomDeepRow = worldRows > WORLD_ROWS ? row === worldRows - 1 : row === GROUND_ROW + 1;
+        if (isBottomDeepRow && b.type === 'ground_deep') {
           this.blitSprite(
             canvas,
             atlas,
             `${prefix}_ground_deep`,
             b.x,
-            (GROUND_ROW + 2) * TILE,
+            (row + 1) * TILE,
             TILE,
             TILE,
             false
           );
         }
+      }
+    }
+  }
+
+  /** Bloque interactivo ON/OFF switch bicolor con letras ON/OFF */
+  private drawOnOffSwitch(canvas: SkCanvas, world: WorldState, b: Block): void {
+    const drawY = b.y + b.bounceY;
+    const state = world.onOffState ?? 'on';
+    const isOn = state === 'on';
+
+    // Carcasa metálica oscura exterior
+    this.fillPaint.setColor(Skia.Color('#0f172a'));
+    canvas.drawRect(Skia.XYWHRect(b.x, drawY, TILE, TILE), this.fillPaint);
+
+    // Bisel metálico
+    this.fillPaint.setColor(Skia.Color('#94a3b8'));
+    canvas.drawRect(Skia.XYWHRect(b.x + 1, drawY + 1, TILE - 2, 2), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(b.x + 1, drawY + 1, 2, TILE - 2), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#1e293b'));
+    canvas.drawRect(Skia.XYWHRect(b.x + 1, drawY + TILE - 3, TILE - 2, 2), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(b.x + TILE - 3, drawY + 1, 2, TILE - 2), this.fillPaint);
+
+    // Fondo del interruptor: rojo si ON, azul si OFF
+    const faceCol = isOn ? '#ef4444' : '#3b82f6';
+    const faceHi = isOn ? '#f87171' : '#60a5fa';
+    const faceDark = isOn ? '#b91c1c' : '#1d4ed8';
+
+    this.fillPaint.setColor(Skia.Color(faceCol));
+    canvas.drawRect(Skia.XYWHRect(b.x + 3, drawY + 3, TILE - 6, TILE - 6), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color(faceHi));
+    canvas.drawRect(Skia.XYWHRect(b.x + 3, drawY + 3, TILE - 6, 2), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(b.x + 3, drawY + 3, 2, TILE - 6), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color(faceDark));
+    canvas.drawRect(Skia.XYWHRect(b.x + 3, drawY + TILE - 5, TILE - 6, 2), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(b.x + TILE - 5, drawY + 3, 2, TILE - 6), this.fillPaint);
+
+    // Placa rehundida central para el texto
+    const plateBg = isOn ? '#7f1d1d' : '#1e3a8a';
+    this.fillPaint.setColor(Skia.Color(plateBg));
+    canvas.drawRect(Skia.XYWHRect(b.x + 5, drawY + 7, 22, 18), this.fillPaint);
+
+    // Tipografía pixel-art para "ON" / "OFF"
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    if (isOn) {
+      // Letra 'O' en b.x + 8, drawY + 10 (ancho 6, alto 12)
+      canvas.drawRect(Skia.XYWHRect(b.x + 8, drawY + 10, 6, 12), this.fillPaint);
+      this.fillPaint.setColor(Skia.Color(plateBg));
+      canvas.drawRect(Skia.XYWHRect(b.x + 10, drawY + 12, 2, 8), this.fillPaint);
+
+      // Letra 'N' en b.x + 16, drawY + 10 (ancho 7, alto 12)
+      this.fillPaint.setColor(Skia.Color('#ffffff'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 16, drawY + 10, 2, 12), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 21, drawY + 10, 2, 12), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 18, drawY + 13, 2, 3), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 19, drawY + 16, 2, 3), this.fillPaint);
+    } else {
+      // Letra 'O' en b.x + 6, drawY + 10 (ancho 5, alto 12)
+      canvas.drawRect(Skia.XYWHRect(b.x + 6, drawY + 10, 5, 12), this.fillPaint);
+      this.fillPaint.setColor(Skia.Color(plateBg));
+      canvas.drawRect(Skia.XYWHRect(b.x + 8, drawY + 12, 1.5, 8), this.fillPaint);
+
+      // Letra 'F' en b.x + 13, drawY + 10 (ancho 5, alto 12)
+      this.fillPaint.setColor(Skia.Color('#ffffff'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 13, drawY + 10, 2, 12), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 15, drawY + 10, 3, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 15, drawY + 14, 2, 2), this.fillPaint);
+
+      // Letra 'F' en b.x + 20, drawY + 10 (ancho 5, alto 12)
+      canvas.drawRect(Skia.XYWHRect(b.x + 20, drawY + 10, 2, 12), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 22, drawY + 10, 3, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 22, drawY + 14, 2, 2), this.fillPaint);
+    }
+
+    // Remaches de las esquinas
+    this.fillPaint.setColor(Skia.Color('#cbd5e1'));
+    canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + 2, 2, 2), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(b.x + TILE - 4, drawY + 2, 2, 2), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + TILE - 4, 2, 2), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(b.x + TILE - 4, drawY + TILE - 4, 2, 2), this.fillPaint);
+
+    // Indicador LED de estado
+    this.fillPaint.setColor(Skia.Color(isOn ? '#22c55e' : '#f59e0b'));
+    canvas.drawCircle(b.x + TILE - 7, drawY + 5.5, 2, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawCircle(b.x + TILE - 7, drawY + 5.5, 0.8, this.fillPaint);
+  }
+
+  /** Bloque ON: sólido rojo en 'on', marco punteado translúcido en 'off' */
+  private drawOnBlock(canvas: SkCanvas, world: WorldState, b: Block): void {
+    const drawY = b.y + b.bounceY;
+    const isOn = (world.onOffState ?? 'on') === 'on';
+
+    if (isOn) {
+      // Bloque rojo brillante sólido
+      this.fillPaint.setColor(Skia.Color('#7f1d1d'));
+      canvas.drawRect(Skia.XYWHRect(b.x, drawY, TILE, TILE), this.fillPaint);
+
+      this.fillPaint.setColor(Skia.Color('#ef4444'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + 2, TILE - 4, TILE - 4), this.fillPaint);
+
+      // Bisel de realce
+      this.fillPaint.setColor(Skia.Color('#fca5a5'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + 2, TILE - 4, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + 2, 2, TILE - 4), this.fillPaint);
+
+      // Bisel de sombra
+      this.fillPaint.setColor(Skia.Color('#b91c1c'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + TILE - 4, TILE - 4, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + TILE - 4, drawY + 2, 2, TILE - 4), this.fillPaint);
+
+      // Emblema rehundido
+      this.fillPaint.setColor(Skia.Color('#991b1b'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 7, drawY + 7, 18, 18), this.fillPaint);
+      this.fillPaint.setColor(Skia.Color('#fecaca'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 11, drawY + 11, 10, 10), this.fillPaint);
+      this.fillPaint.setColor(Skia.Color('#ffffff'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 13, drawY + 13, 6, 6), this.fillPaint);
+
+      // Remaches
+      this.fillPaint.setColor(Skia.Color('#fecaca'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 3, drawY + 3, 2, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + TILE - 5, drawY + 3, 2, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 3, drawY + TILE - 5, 2, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + TILE - 5, drawY + TILE - 5, 2, 2), this.fillPaint);
+    } else {
+      // Marco punteado translúcido intangible
+      this.fillPaint.setColor(Skia.Color('rgba(239, 68, 68, 0.08)'));
+      canvas.drawRect(Skia.XYWHRect(b.x, drawY, TILE, TILE), this.fillPaint);
+
+      this.fillPaint.setColor(Skia.Color('rgba(248, 113, 113, 0.65)'));
+      // Bordes punteados superior e inferior (4px trazo, 4px espacio)
+      for (let dx = 0; dx < TILE; dx += 8) {
+        canvas.drawRect(Skia.XYWHRect(b.x + dx, drawY, 4, 2), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(b.x + dx, drawY + TILE - 2, 4, 2), this.fillPaint);
+      }
+      // Bordes punteados izquierdo y derecho
+      for (let dy = 0; dy < TILE; dy += 8) {
+        canvas.drawRect(Skia.XYWHRect(b.x, drawY + dy, 2, 4), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(b.x + TILE - 2, drawY + dy, 2, 4), this.fillPaint);
+      }
+      // Cuadro tenue interior
+      this.fillPaint.setColor(Skia.Color('rgba(239, 68, 68, 0.22)'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 10, drawY + 10, 12, 12), this.fillPaint);
+    }
+  }
+
+  /** Bloque OFF: sólido azul en 'off', marco punteado translúcido en 'on' */
+  private drawOffBlock(canvas: SkCanvas, world: WorldState, b: Block): void {
+    const drawY = b.y + b.bounceY;
+    const isSolid = (world.onOffState ?? 'on') === 'off';
+
+    if (isSolid) {
+      // Bloque azul brillante sólido
+      this.fillPaint.setColor(Skia.Color('#1e3a8a'));
+      canvas.drawRect(Skia.XYWHRect(b.x, drawY, TILE, TILE), this.fillPaint);
+
+      this.fillPaint.setColor(Skia.Color('#3b82f6'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + 2, TILE - 4, TILE - 4), this.fillPaint);
+
+      // Bisel de realce
+      this.fillPaint.setColor(Skia.Color('#93c5fd'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + 2, TILE - 4, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + 2, 2, TILE - 4), this.fillPaint);
+
+      // Bisel de sombra
+      this.fillPaint.setColor(Skia.Color('#1d4ed8'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 2, drawY + TILE - 4, TILE - 4, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + TILE - 4, drawY + 2, 2, TILE - 4), this.fillPaint);
+
+      // Emblema rehundido
+      this.fillPaint.setColor(Skia.Color('#172554'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 7, drawY + 7, 18, 18), this.fillPaint);
+      this.fillPaint.setColor(Skia.Color('#bfdbfe'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 11, drawY + 11, 10, 10), this.fillPaint);
+      this.fillPaint.setColor(Skia.Color('#ffffff'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 13, drawY + 13, 6, 6), this.fillPaint);
+
+      // Remaches
+      this.fillPaint.setColor(Skia.Color('#bfdbfe'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 3, drawY + 3, 2, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + TILE - 5, drawY + 3, 2, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + 3, drawY + TILE - 5, 2, 2), this.fillPaint);
+      canvas.drawRect(Skia.XYWHRect(b.x + TILE - 5, drawY + TILE - 5, 2, 2), this.fillPaint);
+    } else {
+      // Marco punteado translúcido intangible
+      this.fillPaint.setColor(Skia.Color('rgba(59, 130, 246, 0.08)'));
+      canvas.drawRect(Skia.XYWHRect(b.x, drawY, TILE, TILE), this.fillPaint);
+
+      this.fillPaint.setColor(Skia.Color('rgba(96, 165, 250, 0.65)'));
+      // Bordes punteados superior e inferior
+      for (let dx = 0; dx < TILE; dx += 8) {
+        canvas.drawRect(Skia.XYWHRect(b.x + dx, drawY, 4, 2), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(b.x + dx, drawY + TILE - 2, 4, 2), this.fillPaint);
+      }
+      // Bordes punteados izquierdo y derecho
+      for (let dy = 0; dy < TILE; dy += 8) {
+        canvas.drawRect(Skia.XYWHRect(b.x, drawY + dy, 2, 4), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(b.x + TILE - 2, drawY + dy, 2, 4), this.fillPaint);
+      }
+      // Cuadro tenue interior
+      this.fillPaint.setColor(Skia.Color('rgba(59, 130, 246, 0.22)'));
+      canvas.drawRect(Skia.XYWHRect(b.x + 10, drawY + 10, 12, 12), this.fillPaint);
+    }
+  }
+
+  /** Portales luminosos en los bordes para wrapHorizontal (Tower) */
+  private drawWrapPortals(canvas: SkCanvas, world: WorldState, camY: number): void {
+    if (!world.wrapHorizontal) return;
+    const leftX = 1.5 * TILE;
+    const rightX = (world.totalCols - 1.5) * TILE;
+    const topY = camY - 16;
+    const bottomY = camY + LOGICAL_HEIGHT + 32;
+    const height = bottomY - topY;
+
+    const portalXs = [leftX, rightX];
+    for (let idx = 0; idx < portalXs.length; idx++) {
+      const px = portalXs[idx];
+      const isLeft = idx === 0;
+
+      // Franja de brillo suave vertical
+      this.fillPaint.setColor(Skia.Color('rgba(56, 189, 248, 0.12)'));
+      canvas.drawRect(Skia.XYWHRect(px - 10, topY, 20, height), this.fillPaint);
+
+      this.fillPaint.setColor(Skia.Color('rgba(168, 85, 247, 0.22)'));
+      canvas.drawRect(Skia.XYWHRect(px - 4, topY, 8, height), this.fillPaint);
+
+      // Haz central luminoso
+      this.fillPaint.setColor(Skia.Color('rgba(240, 249, 255, 0.65)'));
+      canvas.drawRect(Skia.XYWHRect(px - 1, topY, 2, height), this.fillPaint);
+
+      // Nodos brillantes / chispas ascendentes
+      for (let i = 0; i < 8; i++) {
+        const nodeY = topY + ((world.frameCount * 1.4 + i * 58) % height);
+        const pulse = 1 + Math.sin(world.frameCount * 0.15 + i) * 0.5;
+
+        this.fillPaint.setColor(Skia.Color('#38bdf8'));
+        canvas.drawCircle(px, nodeY, 3 * pulse, this.fillPaint);
+
+        this.fillPaint.setColor(Skia.Color('#ffffff'));
+        canvas.drawCircle(px, nodeY, 1.5, this.fillPaint);
+
+        // Indicador chevron sutil apuntando hacia el centro de la pantalla
+        this.fillPaint.setColor(Skia.Color('rgba(192, 132, 252, 0.7)'));
+        const dir = isLeft ? 1 : -1;
+        canvas.drawRect(Skia.XYWHRect(px + dir * 5, nodeY - 2, 2, 4), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(px + dir * 7, nodeY - 1, 2, 2), this.fillPaint);
+      }
+    }
+  }
+
+  /** Marea ondulada de magma / sombra luminosa ascendente (Tower) */
+  private drawRisingHazard(
+    canvas: SkCanvas,
+    world: WorldState,
+    camX: number,
+    viewportW: number
+  ): void {
+    const hazardY = world.risingHazardY;
+    if (hazardY == null) return;
+
+    const worldRows = world.worldRows ?? WORLD_ROWS;
+    const bottomY = Math.max((worldRows + 4) * TILE, hazardY + LOGICAL_HEIGHT * 2);
+    const startX = camX - 32;
+    const endX = camX + viewportW + 32;
+
+    const isMagma =
+      world.biomeId === 'fortress' ||
+      world.biomeId === 'ember' ||
+      world.biomeId === 'cavern' ||
+      world.partition === 'tower';
+
+    const crestBright = isMagma ? '#fde047' : '#f0abfc';
+    const crestMid = isMagma ? '#ea580c' : '#c026d3';
+    const crestDark = isMagma ? '#dc2626' : '#7e22ce';
+    const bodyColor = isMagma ? '#7f1d1d' : '#2e1065';
+    const deepColor = isMagma ? '#450a0a' : '#12061f';
+
+    // Columnas onduladas
+    const step = 8;
+    for (let x = startX; x < endX; x += step) {
+      const wave =
+        Math.sin(world.frameCount * 0.12 + x * 0.04) * 6 +
+        Math.cos(world.frameCount * 0.18 + x * 0.07) * 3;
+      const surfaceY = hazardY + wave;
+
+      // Cresta 1: borde brillante
+      this.fillPaint.setColor(Skia.Color(crestBright));
+      canvas.drawRect(Skia.XYWHRect(x, surfaceY, step + 0.5, 3), this.fillPaint);
+
+      // Cresta 2: banda media
+      this.fillPaint.setColor(Skia.Color(crestMid));
+      canvas.drawRect(Skia.XYWHRect(x, surfaceY + 3, step + 0.5, 5), this.fillPaint);
+
+      // Cresta 3: transición oscura
+      this.fillPaint.setColor(Skia.Color(crestDark));
+      canvas.drawRect(Skia.XYWHRect(x, surfaceY + 8, step + 0.5, 10), this.fillPaint);
+
+      // Cuerpo
+      this.fillPaint.setColor(Skia.Color(bodyColor));
+      canvas.drawRect(Skia.XYWHRect(x, surfaceY + 18, step + 0.5, 48), this.fillPaint);
+
+      // Profundidad abisal
+      this.fillPaint.setColor(Skia.Color(deepColor));
+      canvas.drawRect(
+        Skia.XYWHRect(x, surfaceY + 66, step + 0.5, Math.max(0, bottomY - (surfaceY + 66))),
+        this.fillPaint
+      );
+    }
+
+    // Brasas / burbujas ascendentes
+    for (let i = 0; i < 18; i++) {
+      const seed = i * 83 + 17;
+      const emberX = startX + ((seed + world.frameCount * 0.6) % (endX - startX));
+      const rise = (world.frameCount * 1.6 + i * 23) % 70;
+      const emberY = hazardY - rise + 8;
+      const alpha = Math.max(0, 1 - rise / 70);
+
+      if (alpha > 0.08) {
+        this.fillPaint.setColor(Skia.Color(i % 2 === 0 ? crestBright : crestMid));
+        const sz = i % 3 === 0 ? 3.5 : 2;
+        canvas.drawCircle(emberX, emberY, sz / 2, this.fillPaint);
       }
     }
   }
@@ -964,13 +1455,21 @@ export class SkiaWorldRenderer {
   }
 
   private drawGoalLock(canvas: SkCanvas, world: WorldState): void {
-    if (!isGoalLocked(world)) return;
+    const arenaLocked = Boolean(
+      world.arenaWave &&
+        world.arenaWave.current <= world.arenaWave.total &&
+        (world.arenaWave.remaining > 0 ||
+          world.enemies.some((en) => en.state !== 'squashed' && en.state !== 'knocked'))
+    );
+    if (!isGoalLocked(world) && !arenaLocked) return;
     const gx = world.flagpole ? world.flagpole.x - 8 : world.goalTape ? world.goalTape.x - 4 : null;
     if (gx === null) return;
-    const gy = (GROUND_ROW - 3) * TILE;
+    const baseGroundY = world.flagpole ? world.flagpole.y + world.flagpole.height : GROUND_ROW * TILE;
+    const gy = baseGroundY - 3 * TILE;
+    const topBarY = world.flagpole ? world.flagpole.y : 2 * TILE;
     // Barrotes delante de la meta
     this.fillPaint.setColor(Skia.Color('rgba(88, 28, 135, 0.55)'));
-    canvas.drawRect(Skia.XYWHRect(gx - 4, 2 * TILE, 8, (GROUND_ROW - 2) * TILE), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(gx - 4, topBarY, 8, Math.max(TILE, baseGroundY - topBarY - TILE)), this.fillPaint);
     // Candado
     this.fillPaint.setColor(Skia.Color('#1c1917'));
     canvas.drawRect(Skia.XYWHRect(gx - 13, gy - 1, 26, 22), this.fillPaint);
@@ -989,7 +1488,8 @@ export class SkiaWorldRenderer {
     if (!ch) return;
     const edge = ch.x;
     const top = -2 * TILE;
-    const bottom = (GROUND_ROW + 4) * TILE;
+    const worldRows = world.worldRows ?? WORLD_ROWS;
+    const bottom = (worldRows + 4) * TILE;
     this.fillPaint.setColor(Skia.Color('#12061f'));
     canvas.drawRect(Skia.XYWHRect(edge - 1400, top, 1400, bottom - top), this.fillPaint);
     // Borde irregular que se retuerce
@@ -1001,7 +1501,7 @@ export class SkiaWorldRenderer {
       canvas.drawRect(Skia.XYWHRect(edge + wave, yy + 4, 4, 8), this.fillPaint);
     }
     // Ojos que siguen al jugador
-    const eyeY = Math.max(3 * TILE, Math.min(world.player.y, (GROUND_ROW - 2) * TILE));
+    const eyeY = Math.max(3 * TILE, Math.min(world.player.y, (worldRows - 2) * TILE));
     const blink = world.frameCount % 150 < 6;
     this.fillPaint.setColor(Skia.Color('#f0abfc'));
     if (!blink) {

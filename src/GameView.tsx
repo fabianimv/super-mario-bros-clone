@@ -61,6 +61,8 @@ import {
 import { HudOverlay, type HudSnapshot } from './ui/HudOverlay';
 import { objectiveHudLabel } from './engine/objectives';
 import {
+  ALL_PARTITIONS,
+  PARTITION_INFO,
   getPartitionProgress,
   nextPartition,
   recordStageClear,
@@ -145,7 +147,8 @@ export const GameView: React.FC = () => {
   // Al salir del modo 3D se desmonta la vista GL: liberar su renderer para no
   // dibujar sobre un contexto que ya no existe (se crea otro al volver)
   useEffect(() => {
-    if (partition !== 'dimension' && gl3dRef.current) {
+    const is3D = partition === 'dimension' || worldRef.current.cameraMode === 'corridor3d';
+    if (!is3D && gl3dRef.current) {
       try {
         gl3dRef.current.dispose();
       } catch {
@@ -267,6 +270,18 @@ export const GameView: React.FC = () => {
           setProgress(updated);
           void saveProgress(updated);
         }
+      } else if (ev.type === 'secret_unlocked' && !silentDemo) {
+        const cur = progressRef.current;
+        const updated: SaveProgress = {
+          ...cur,
+          secretUnlocked: true,
+          lastPartition: ev.partition,
+        };
+        progressRef.current = updated;
+        setProgress(updated);
+        void saveProgress(updated);
+        partitionRef.current = ev.partition;
+        setPartition(ev.partition);
       }
     }
   }, []);
@@ -312,7 +327,8 @@ export const GameView: React.FC = () => {
       const activeWorld = worldRef.current;
       const gl3d = gl3dRef.current;
       let drewIn3D = false;
-      if (activeWorld.partition === 'dimension' && gl3d && !gl3dFailedRef.current) {
+      const is3D = activeWorld.partition === 'dimension' || activeWorld.cameraMode === 'corridor3d';
+      if (is3D && gl3d && !gl3dFailedRef.current) {
         try {
           gl3d.render(activeWorld, width, height);
           framePicture.value = renderer.renderOverlayTexts(
@@ -342,13 +358,28 @@ export const GameView: React.FC = () => {
 
       // Only update lightweight HUD React state when displayed values change
       if (!inTitleRef.current) {
+        if (activeWorld.partition !== partitionRef.current) {
+          partitionRef.current = activeWorld.partition;
+          setPartition(activeWorld.partition);
+          const updatedProg: SaveProgress = {
+            ...progressRef.current,
+            lastPartition: activeWorld.partition,
+          };
+          progressRef.current = updatedProg;
+          setProgress(updatedProg);
+          void saveProgress(updatedProg);
+        }
+
         const bossHp =
           activeWorld.boss && !activeWorld.boss.defeated ? activeWorld.boss.hp : null;
         const bossMaxHp = activeWorld.boss ? activeWorld.boss.maxHp : null;
         const starActive = activeWorld.player.starTimer > 0;
         const pBucket = Math.floor(activeWorld.player.pMeter / 10);
         const yoshiFireReady = activeWorld.player.yoshiMouthItem === 'fire';
-        const hudKey = `${activeWorld.partition}|${activeWorld.status}|${activeWorld.score}|${activeWorld.coins}|${activeWorld.dragonCoinsCollected}|${activeWorld.worldLabel}|${activeWorld.timeLeft}|${activeWorld.lives}|${activeWorld.player.powerState}|${starActive}|${pBucket}|${activeWorld.player.mountedYoshi}|${yoshiFireReady}|${bossHp}|${activeWorld.gemsCollected ?? 0}|${activeWorld.objective ?? ''}|${activeWorld.hasKey ? 1 : 0}`;
+        const arenaWaveKey = activeWorld.arenaWave
+          ? `${activeWorld.arenaWave.current}/${activeWorld.arenaWave.total}`
+          : '';
+        const hudKey = `${activeWorld.partition}|${activeWorld.status}|${activeWorld.score}|${activeWorld.coins}|${activeWorld.dragonCoinsCollected}|${activeWorld.worldLabel}|${activeWorld.timeLeft}|${activeWorld.lives}|${activeWorld.player.powerState}|${starActive}|${pBucket}|${activeWorld.player.mountedYoshi}|${yoshiFireReady}|${bossHp}|${activeWorld.gemsCollected ?? 0}|${activeWorld.objective ?? ''}|${activeWorld.hasKey ? 1 : 0}|${activeWorld.cameraMode ?? 'side'}|${activeWorld.gravityDir ?? 1}|${activeWorld.onOffState ?? ''}|${activeWorld.subArea ?? ''}|${arenaWaveKey}`;
         if (hudKey !== lastHudKey) {
           lastHudKey = hudKey;
           setUiStatus(activeWorld.status);
@@ -371,6 +402,13 @@ export const GameView: React.FC = () => {
             objective: objectiveHudLabel(activeWorld),
             timeAttack: activeWorld.objective === 'time_attack',
             keyHeld: Boolean(activeWorld.hasKey),
+            cameraMode: activeWorld.cameraMode,
+            gravityDir: activeWorld.gravityDir,
+            onOffState: activeWorld.onOffState,
+            subArea: activeWorld.subArea,
+            arenaWave: activeWorld.arenaWave
+              ? { current: activeWorld.arenaWave.current, total: activeWorld.arenaWave.total }
+              : null,
           });
         }
       }
@@ -532,6 +570,8 @@ export const GameView: React.FC = () => {
     modalMode === 'none' &&
     !worldSelectOpen &&
     (uiStatus === 'playing' ||
+      uiStatus === 'pipe_enter' ||
+      uiStatus === 'pipe_exit' ||
       uiStatus === 'flagpole' ||
       uiStatus === 'goal_tape' ||
       uiStatus === 'boss_collapse');
@@ -540,15 +580,16 @@ export const GameView: React.FC = () => {
   const activeHighScore = getPartitionProgress(progress, hud.partition).highScore;
   const continueLevelIdx = getPartitionProgress(progress, partition).unlocked;
 
-  const show3D = partition === 'dimension' && !gl3dFailed && GLViewComponent !== null;
+  const is3D = hud.partition === 'dimension' || hud.cameraMode === 'corridor3d';
+  const show3D = is3D && !gl3dFailed && GLViewComponent !== null;
   const GLViewC = GLViewComponent;
 
   return (
     <View style={styles.root}>
-      {/* Modo Dimensión: vista 3D debajo del canvas de Skia (que solo dibuja textos) */}
+      {/* Modo Dimensión 3D y Corredor Cósmico 3D: vista 3D debajo del canvas de Skia */}
       {show3D && GLViewC && (
         <GLViewC
-          key="dimension-3d"
+          key={hud.cameraMode === 'corridor3d' ? 'star-road-3d' : 'dimension-3d'}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
           onContextCreate={(gl) => {

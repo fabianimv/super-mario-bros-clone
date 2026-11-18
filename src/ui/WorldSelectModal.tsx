@@ -9,6 +9,8 @@ import {
   ECHO_WORLD_NAMES,
   EXP_WORLDS,
   EXP_WORLD_NAMES,
+  FLIP_WORLDS,
+  FLIP_WORLD_NAMES,
   FORTUNE_WORLDS,
   FORTUNE_WORLD_NAMES,
   FRONTIER_WORLDS,
@@ -17,13 +19,23 @@ import {
   MIRAGE_WORLD_NAMES,
   SMW_WORLDS,
   STAGES_PER_WORLD,
+  STAR_ROAD_WORLDS,
+  STAR_ROAD_WORLD_NAMES,
   TOTAL_WORLDS,
+  TOWER_WORLDS,
+  TOWER_WORLD_NAMES,
   getStageBiome,
   getWorldLabel,
 } from '../engine/biomes';
 import type { GamePartition, SaveProgress } from '../engine/types';
 import { SMW_WORLD_NAMES } from '../levels/smwLevelBuilder';
-import { PARTITION_INFO, PARTITION_ORDER, getPartitionProgress, partitionHeading } from '../engine/partitions';
+import {
+  NONLINEAR_PARTITIONS,
+  PARTITION_INFO,
+  PARTITION_ORDER,
+  getPartitionProgress,
+  partitionHeading,
+} from '../engine/partitions';
 
 interface Props {
   visible: boolean;
@@ -66,6 +78,13 @@ export const WorldSelectModal: React.FC<Props> = ({
   const isMirage = partition === 'mirage';
   const isEcho = partition === 'echo';
   const isDim = partition === 'dimension';
+  const isTower = partition === 'tower';
+  const isFlip = partition === 'flip';
+  const isStarRoad = partition === 'star_road';
+
+  const basePartitions: GamePartition[] = ['classic', 'smw', 'expedition', 'dimension'];
+  const newPartitions = PARTITION_ORDER.filter((part) => !basePartitions.includes(part));
+
   const worldCount = isSmw
     ? SMW_WORLDS
     : isExp
@@ -80,6 +99,12 @@ export const WorldSelectModal: React.FC<Props> = ({
     ? ECHO_WORLDS
     : isDim
     ? DIM_WORLDS
+    : isTower
+    ? TOWER_WORLDS
+    : isFlip
+    ? FLIP_WORLDS
+    : isStarRoad
+    ? STAR_ROAD_WORLDS
     : TOTAL_WORLDS;
   const worldNames = isSmw
     ? SMW_WORLD_NAMES
@@ -95,6 +120,12 @@ export const WorldSelectModal: React.FC<Props> = ({
     ? ECHO_WORLD_NAMES
     : isDim
     ? DIM_WORLD_NAMES
+    : isTower
+    ? TOWER_WORLD_NAMES
+    : isFlip
+    ? FLIP_WORLD_NAMES
+    : isStarRoad
+    ? STAR_ROAD_WORLD_NAMES
     : CLASSIC_WORLD_NAMES;
   const pp = getPartitionProgress(progress, partition);
   const unlockedIdx = pp.unlocked;
@@ -130,6 +161,9 @@ export const WorldSelectModal: React.FC<Props> = ({
                 isExp && { color: '#c4b5fd' },
                 isFrontier && { color: '#bae6fd' },
                 isDim && { color: '#a5f3fc' },
+                isTower && { color: '#fdba74' },
+                isFlip && { color: '#d8b4fe' },
+                isStarRoad && { color: '#fde047' },
               ]}
             >
               {partitionHeading(partition)}
@@ -137,21 +171,6 @@ export const WorldSelectModal: React.FC<Props> = ({
           </View>
 
           <View style={styles.headerActions}>
-            {PARTITION_ORDER.map((part) => (
-              <Pressable
-                key={part}
-                onPress={() => onSelectPartition(part)}
-                style={[
-                  styles.partChip,
-                  part === partition && { backgroundColor: PARTITION_INFO[part].accent },
-                ]}
-              >
-                <Text style={[styles.chipText, { fontFamily }]}>
-                  {PARTITION_INFO[part].chip}
-                </Text>
-              </Pressable>
-            ))}
-
             <Pressable
               onPress={() => setFreePlay((v) => !v)}
               style={[
@@ -170,6 +189,64 @@ export const WorldSelectModal: React.FC<Props> = ({
           </View>
         </View>
 
+        {/* 3 filas de chips: Fila 1 (4 base), Fila 2 (4 nuevos), Fila 3 (3 no-lineales y secretos) */}
+        <View style={styles.partitionSelector}>
+          <View style={styles.chipRow}>
+            {basePartitions.map((part) => (
+              <Pressable
+                key={part}
+                onPress={() => onSelectPartition(part)}
+                style={[
+                  styles.partChip,
+                  part === partition && { backgroundColor: PARTITION_INFO[part].accent },
+                ]}
+              >
+                <Text style={[styles.chipText, { fontFamily }]}>
+                  {PARTITION_INFO[part].chip}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.chipRow}>
+            {newPartitions.map((part) => (
+              <Pressable
+                key={part}
+                onPress={() => onSelectPartition(part)}
+                style={[
+                  styles.partChip,
+                  part === partition && { backgroundColor: PARTITION_INFO[part].accent },
+                ]}
+              >
+                <Text style={[styles.chipText, { fontFamily }]}>
+                  {PARTITION_INFO[part].chip}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={[styles.chipRow, styles.chipRowNonlinear]}>
+            {NONLINEAR_PARTITIONS.map((part) => {
+              const isLocked = part === 'star_road' && !progress.secretUnlocked && !freePlay;
+              return (
+                <Pressable
+                  key={part}
+                  disabled={isLocked}
+                  onPress={() => onSelectPartition(part)}
+                  style={[
+                    styles.partChip,
+                    styles.partChipNonlinear,
+                    isLocked && styles.partChipLocked,
+                    part === partition && { backgroundColor: PARTITION_INFO[part].accent },
+                  ]}
+                >
+                  <Text style={[styles.chipText, { fontFamily }, isLocked && { color: '#94a3b8' }]}>
+                    {isLocked ? '🔒 🌟 SENDA ESTELAR' : PARTITION_INFO[part].chip}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         <ScrollView
           contentContainerStyle={styles.grid}
           showsVerticalScrollIndicator={false}
@@ -181,11 +258,20 @@ export const WorldSelectModal: React.FC<Props> = ({
             return (
               <View
                 key={`${partition}_${wIdx}`}
-                style={[styles.worldCard, isFrontier && styles.worldCardFrontier]}
+                style={[
+                  styles.worldCard,
+                  isFrontier && styles.worldCardFrontier,
+                  isTower && styles.worldCardTower,
+                  isFlip && styles.worldCardFlip,
+                  isStarRoad && styles.worldCardStarRoad,
+                ]}
               >
                 <View style={styles.worldHeaderRow}>
                   <View
-                    style={[styles.worldSwatch, { backgroundColor: primaryBiome.groundCap }]}
+                    style={[
+                      styles.worldSwatch,
+                      { backgroundColor: primaryBiome ? primaryBiome.groundCap : '#facc15' },
+                    ]}
                   />
                   <Text style={[styles.worldTitle, { fontFamily }]}>
                     {worldNames[wIdx]}
@@ -208,6 +294,9 @@ export const WorldSelectModal: React.FC<Props> = ({
                           styles.stageBtn,
                           isSmw && styles.stageBtnSmw,
                           isFrontier && styles.stageBtnFrontier,
+                          isTower && styles.stageBtnTower,
+                          isFlip && styles.stageBtnFlip,
+                          isStarRoad && styles.stageBtnStarRoad,
                           isBoss && styles.stageBtnBoss,
                           !unlocked && styles.stageBtnLocked,
                           cleared && styles.stageBtnCleared,
@@ -280,6 +369,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  partitionSelector: {
+    gap: 5,
+    marginBottom: 8,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  chipRowNonlinear: {
+    paddingTop: 2,
+  },
   partChip: {
     backgroundColor: '#1e293b',
     borderWidth: 2,
@@ -287,6 +388,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 8,
+  },
+  partChipNonlinear: {
+    borderColor: '#eab308',
+  },
+  partChipLocked: {
+    backgroundColor: '#0f172a',
+    borderColor: '#334155',
+    opacity: 0.7,
   },
   partChipClassicActive: {
     backgroundColor: '#b91c1c',
@@ -342,6 +451,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#0c2a43',
     borderColor: '#155e75',
   },
+  worldCardTower: {
+    backgroundColor: '#2d1808',
+    borderColor: '#f97316',
+  },
+  worldCardFlip: {
+    backgroundColor: '#230b38',
+    borderColor: '#a855f7',
+  },
+  worldCardStarRoad: {
+    backgroundColor: '#291804',
+    borderColor: '#eab308',
+  },
   worldHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -379,6 +500,18 @@ const styles = StyleSheet.create({
   stageBtnFrontier: {
     backgroundColor: '#075985',
     borderColor: '#7dd3fc',
+  },
+  stageBtnTower: {
+    backgroundColor: '#c2410c',
+    borderColor: '#fdba74',
+  },
+  stageBtnFlip: {
+    backgroundColor: '#7e22ce',
+    borderColor: '#d8b4fe',
+  },
+  stageBtnStarRoad: {
+    backgroundColor: '#ca8a04',
+    borderColor: '#fef08a',
   },
   stageBtnBoss: {
     backgroundColor: '#991b1b',

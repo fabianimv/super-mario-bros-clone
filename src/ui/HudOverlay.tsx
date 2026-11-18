@@ -23,6 +23,11 @@ export interface HudSnapshot {
   objective?: string | null;
   timeAttack?: boolean;
   keyHeld?: boolean;
+  cameraMode?: 'side' | 'corridor3d';
+  gravityDir?: 1 | -1;
+  onOffState?: 'on' | 'off';
+  subArea?: 'subroom' | 'warp_zone' | null;
+  arenaWave?: { current: number; total: number } | null;
 }
 
 interface Props {
@@ -108,6 +113,12 @@ export const HudOverlay: React.FC<Props> = ({ hud, pixelFontLoaded, onPausePress
               ? 'REGIÓN'
               : hud.partition === 'expedition' || hud.partition === 'dimension'
               ? 'ZONA'
+              : hud.partition === 'tower'
+              ? 'TORRE'
+              : hud.partition === 'flip'
+              ? 'TEMPLO'
+              : hud.partition === 'star_road'
+              ? 'SENDA'
               : 'MUNDO'}
           </Text>
           <Text style={[styles.statValue, { fontFamily }]}>{hud.worldLabel}</Text>
@@ -188,6 +199,50 @@ export const HudOverlay: React.FC<Props> = ({ hud, pixelFontLoaded, onPausePress
           <View style={[styles.powerPill, { backgroundColor: yoshiBadge.bg }]}>
             <Text style={[styles.powerPillText, { fontFamily, color: yoshiBadge.text }]}>
               {yoshiBadge.label}
+            </Text>
+          </View>
+        )}
+
+        {hud.gravityDir === -1 && (
+          <View style={[styles.powerPill, { backgroundColor: '#7e22ce', borderColor: '#d8b4fe' }]}>
+            <Text style={[styles.powerPillText, { fontFamily, color: '#f3e8ff' }]}>↕ INVERTIDO</Text>
+          </View>
+        )}
+
+        {hud.onOffState != null && (
+          <View
+            style={[
+              styles.powerPill,
+              hud.onOffState === 'on'
+                ? { backgroundColor: '#dc2626', borderColor: '#fca5a5' }
+                : { backgroundColor: '#2563eb', borderColor: '#93c5fd' },
+            ]}
+          >
+            <Text style={[styles.powerPillText, { fontFamily, color: '#ffffff' }]}>
+              {hud.onOffState === 'on' ? '🔴 ON' : '🔵 OFF'}
+            </Text>
+          </View>
+        )}
+
+        {hud.subArea != null && (
+          <View
+            style={[
+              styles.powerPill,
+              hud.subArea === 'warp_zone'
+                ? { backgroundColor: '#7c3aed', borderColor: '#c4b5fd' }
+                : { backgroundColor: '#059669', borderColor: '#6ee7b7' },
+            ]}
+          >
+            <Text style={[styles.powerPillText, { fontFamily, color: '#ffffff' }]}>
+              {hud.subArea === 'warp_zone' ? '🌀 ZONA WARP' : '🕳 SUB-ZONA'}
+            </Text>
+          </View>
+        )}
+
+        {hud.arenaWave != null && (
+          <View style={[styles.powerPill, { backgroundColor: '#ea580c', borderColor: '#fdba74' }]}>
+            <Text style={[styles.powerPillText, { fontFamily, color: '#fff7ed' }]}>
+              {`⚔ OLEADA ${hud.arenaWave.current}/${hud.arenaWave.total}`}
             </Text>
           </View>
         )}

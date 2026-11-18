@@ -7,6 +7,8 @@ import { partitionTotalLevels } from './biomes';
 import type { GamePartition, SaveProgress } from './types';
 
 export const PARTITION_ORDER: GamePartition[] = ['classic', 'smw', 'expedition', 'frontier', 'fortune', 'mirage', 'echo', 'dimension'];
+export const NONLINEAR_PARTITIONS: GamePartition[] = ['tower', 'flip', 'star_road'];
+export const ALL_PARTITIONS: GamePartition[] = [...PARTITION_ORDER, ...NONLINEAR_PARTITIONS];
 
 export interface PartitionInfo {
   tab: string;
@@ -129,6 +131,45 @@ export const PARTITION_INFO: Record<GamePartition, PartitionInfo> = {
     accent: '#0891b2',
     subtitleColor: '#a5f3fc',
   },
+  tower: {
+    title: 'TORRE INFINITA',
+    chip: '🗼 TORRE',
+    tab: `🗼 TORRE (${partitionTotalLevels('tower')})`,
+    edition: 'ASCENSO VERTICAL • 2 REGIONES',
+    subtitle: 'TORRE • 8 NIVELES',
+    worldsLabel: '2 REGIONES',
+    worldNoun: 'TORRE',
+    firstStage: 'T-1',
+    hint: 'Scroll vertical ascendente  •  Cruce continuo en bordes  •  Escapa del magma que sube',
+    accent: '#f97316',
+    subtitleColor: '#ffedd5',
+  },
+  flip: {
+    title: 'TEMPLO INVERSO',
+    chip: '🔄 INVERSO',
+    tab: `🔄 INVERSO (${partitionTotalLevels('flip')})`,
+    edition: 'PUZZLE GRAVITACIONAL • METROIDVANIA 2D',
+    subtitle: 'INVERSO • 8 NIVELES',
+    worldsLabel: '2 REGIONES',
+    worldNoun: 'TEMPLO',
+    firstStage: 'G-1',
+    hint: 'Pulsa Y para invertir la gravedad  •  Golpea bloques ON/OFF para alternar puentes y caminos',
+    accent: '#a855f7',
+    subtitleColor: '#f3e8ff',
+  },
+  star_road: {
+    title: 'SENDA ESTELAR',
+    chip: '🌟 SENDA ESTELAR',
+    tab: `🌟 SENDA ESTELAR (${partitionTotalLevels('star_road')})`,
+    edition: 'MUNDO SECRETO • COLISEO Y CORREDOR 3D',
+    subtitle: 'SENDA ESTELAR • 8 NIVELES',
+    worldsLabel: '2 REGIONES',
+    worldNoun: 'REINO',
+    firstStage: '★-1',
+    hint: 'Oleadas dinámicas de enemigos en Coliseo y carreras en perspectiva profunda 3D',
+    accent: '#eab308',
+    subtitleColor: '#fef9c3',
+  },
 };
 
 export interface PartitionProgress {
@@ -201,6 +242,33 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
       unlocked: prog.echoUnlockedLevel ?? 0,
       cleared: prog.echoClearedLevels ?? [],
       best: prog.echoBestStageScores ?? {},
+      total,
+    };
+  }
+  if (part === 'tower') {
+    return {
+      highScore: prog.towerHighScore ?? 0,
+      unlocked: prog.towerUnlockedLevel ?? 0,
+      cleared: prog.towerClearedLevels ?? [],
+      best: prog.towerBestStageScores ?? {},
+      total,
+    };
+  }
+  if (part === 'flip') {
+    return {
+      highScore: prog.flipHighScore ?? 0,
+      unlocked: prog.flipUnlockedLevel ?? 0,
+      cleared: prog.flipClearedLevels ?? [],
+      best: prog.flipBestStageScores ?? {},
+      total,
+    };
+  }
+  if (part === 'star_road') {
+    return {
+      highScore: prog.starRoadHighScore ?? 0,
+      unlocked: prog.starRoadUnlockedLevel ?? 0,
+      cleared: prog.starRoadClearedLevels ?? [],
+      best: prog.starRoadBestStageScores ?? {},
       total,
     };
   }
@@ -281,6 +349,33 @@ export function withPartitionProgress(
       echoBestStageScores: next.best,
     };
   }
+  if (part === 'tower') {
+    return {
+      ...prog,
+      towerHighScore: next.highScore,
+      towerUnlockedLevel: next.unlocked,
+      towerClearedLevels: next.cleared,
+      towerBestStageScores: next.best,
+    };
+  }
+  if (part === 'flip') {
+    return {
+      ...prog,
+      flipHighScore: next.highScore,
+      flipUnlockedLevel: next.unlocked,
+      flipClearedLevels: next.cleared,
+      flipBestStageScores: next.best,
+    };
+  }
+  if (part === 'star_road') {
+    return {
+      ...prog,
+      starRoadHighScore: next.highScore,
+      starRoadUnlockedLevel: next.unlocked,
+      starRoadClearedLevels: next.cleared,
+      starRoadBestStageScores: next.best,
+    };
+  }
   return {
     ...prog,
     highScore: next.highScore,
@@ -319,5 +414,8 @@ export function partitionHeading(part: GamePartition): string {
 
 export function nextPartition(part: GamePartition): GamePartition {
   const i = PARTITION_ORDER.indexOf(part);
+  if (i === -1) {
+    return PARTITION_ORDER[0];
+  }
   return PARTITION_ORDER[(i + 1) % PARTITION_ORDER.length];
 }

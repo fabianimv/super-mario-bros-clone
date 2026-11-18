@@ -34,6 +34,19 @@ export const DEFAULT_PROGRESS: SaveProgress = {
   echoUnlockedLevel: 0,
   echoClearedLevels: [],
   echoBestStageScores: {},
+  towerHighScore: 0,
+  towerUnlockedLevel: 0,
+  towerClearedLevels: [],
+  towerBestStageScores: {},
+  flipHighScore: 0,
+  flipUnlockedLevel: 0,
+  flipClearedLevels: [],
+  flipBestStageScores: {},
+  starRoadHighScore: 0,
+  starRoadUnlockedLevel: 0,
+  starRoadClearedLevels: [],
+  starRoadBestStageScores: {},
+  secretUnlocked: false,
   lastPartition: 'smw',
 };
 
@@ -85,6 +98,19 @@ export async function loadProgress(): Promise<SaveProgress> {
       dimUnlockedLevel: typeof parsed.dimUnlockedLevel === 'number' ? parsed.dimUnlockedLevel : 0,
       dimClearedLevels: Array.isArray(parsed.dimClearedLevels) ? parsed.dimClearedLevels : [],
       dimBestStageScores: parsed.dimBestStageScores ?? {},
+      towerHighScore: typeof parsed.towerHighScore === 'number' ? parsed.towerHighScore : 0,
+      towerUnlockedLevel: typeof parsed.towerUnlockedLevel === 'number' ? parsed.towerUnlockedLevel : 0,
+      towerClearedLevels: Array.isArray(parsed.towerClearedLevels) ? parsed.towerClearedLevels : [],
+      towerBestStageScores: parsed.towerBestStageScores ?? {},
+      flipHighScore: typeof parsed.flipHighScore === 'number' ? parsed.flipHighScore : 0,
+      flipUnlockedLevel: typeof parsed.flipUnlockedLevel === 'number' ? parsed.flipUnlockedLevel : 0,
+      flipClearedLevels: Array.isArray(parsed.flipClearedLevels) ? parsed.flipClearedLevels : [],
+      flipBestStageScores: parsed.flipBestStageScores ?? {},
+      starRoadHighScore: typeof parsed.starRoadHighScore === 'number' ? parsed.starRoadHighScore : 0,
+      starRoadUnlockedLevel: typeof parsed.starRoadUnlockedLevel === 'number' ? parsed.starRoadUnlockedLevel : 0,
+      starRoadClearedLevels: Array.isArray(parsed.starRoadClearedLevels) ? parsed.starRoadClearedLevels : [],
+      starRoadBestStageScores: parsed.starRoadBestStageScores ?? {},
+      secretUnlocked: typeof parsed.secretUnlocked === 'boolean' ? parsed.secretUnlocked : false,
       lastPartition:
         parsed.lastPartition === 'classic' ||
         parsed.lastPartition === 'smw' ||
@@ -93,7 +119,10 @@ export async function loadProgress(): Promise<SaveProgress> {
         parsed.lastPartition === 'fortune' ||
         parsed.lastPartition === 'mirage' ||
         parsed.lastPartition === 'echo' ||
-        parsed.lastPartition === 'dimension'
+        parsed.lastPartition === 'dimension' ||
+        parsed.lastPartition === 'tower' ||
+        parsed.lastPartition === 'flip' ||
+        parsed.lastPartition === 'star_road'
           ? parsed.lastPartition
           : 'smw',
     };

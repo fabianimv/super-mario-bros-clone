@@ -266,6 +266,44 @@ export function synthesizeSfxWav(id: SfxId): Uint8Array {
         ],
         0.34
       );
+    case 'pipe_warp':
+      return renderToneEvents(
+        [
+          { wave: 'pulse50', startSec: 0, durSec: 0.065, freqStart: 392, freqEnd: 196, gain: 0.32 },
+          { wave: 'pulse50', startSec: 0.08, durSec: 0.065, freqStart: 330, freqEnd: 165, gain: 0.32 },
+          { wave: 'pulse50', startSec: 0.16, durSec: 0.09, freqStart: 262, freqEnd: 131, gain: 0.35 },
+          { wave: 'triangle', startSec: 0, durSec: 0.25, freqStart: 130, freqEnd: 65, gain: 0.24 },
+        ],
+        0.28
+      );
+    case 'gravity_flip':
+      return renderToneEvents(
+        [
+          { wave: 'pulse12', startSec: 0, durSec: 0.18, freqStart: 220, freqEnd: 880, gain: 0.25 },
+          { wave: 'triangle', startSec: 0.06, durSec: 0.18, freqStart: 880, freqEnd: 220, gain: 0.28 },
+          { wave: 'noise', startSec: 0.02, durSec: 0.15, freqStart: 1200, freqEnd: 300, gain: 0.12 },
+        ],
+        0.26
+      );
+    case 'switch_toggle':
+      return renderToneEvents(
+        [
+          { wave: 'pulse25', startSec: 0, durSec: 0.035, freqStart: 988, gain: 0.3 },
+          { wave: 'pulse12', startSec: 0.035, durSec: 0.075, freqStart: 1318, gain: 0.28 },
+          { wave: 'noise', startSec: 0, durSec: 0.025, freqStart: 3500, gain: 0.18 },
+        ],
+        0.13
+      );
+    case 'arena_wave':
+      return renderToneEvents(
+        [
+          { wave: 'pulse50', startSec: 0, durSec: 0.09, freqStart: midiFreq(67), gain: 0.28 },
+          { wave: 'pulse50', startSec: 0.09, durSec: 0.09, freqStart: midiFreq(72), gain: 0.3 },
+          { wave: 'pulse50', startSec: 0.18, durSec: 0.22, freqStart: midiFreq(76), gain: 0.32 },
+          { wave: 'triangle', startSec: 0.18, durSec: 0.22, freqStart: midiFreq(52), gain: 0.26 },
+        ],
+        0.42
+      );
     case 'jump':
       return renderToneEvents(
         [{ wave: 'pulse25', startSec: 0, durSec: 0.17, freqStart: 220, freqEnd: 640, gain: 0.36 }],
