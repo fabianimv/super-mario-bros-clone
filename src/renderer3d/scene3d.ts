@@ -712,10 +712,55 @@ export class World3DScene {
         this.cones.add(bx - 0.8 + k * 0.4, by + 0.65, -0.3, 0.25, 0.45, 0.25, '#f5f5f4');
       }
       this.glowSpheres.add(bx + boss.facing * 1.0, by + 0.95, 0.6, 0.14, 0.14, 0.14, '#ef4444');
+
+      // SMW Boss Puzzle: efectos de fase del jefe cuando no está derrotado
+      if (!boss.defeated) {
+        if (boss.phase === 'shell_spin') {
+          // Aura / escudo giratorio violeta-dorado alrededor del jefe con chispas de blindaje
+          const spin = frame * 0.14;
+          this.rings.add(bx, by, 0, 2.7, 2.7, 1.8, '#a855f7', 0, 0, spin);
+          this.rings.add(bx, by, 0, 2.3, 2.3, 1.5, '#facc15', Math.PI / 4, spin * 0.8, 0);
+          this.ghost.add(bx, by, 0, 2.8, 2.6, 2.3, '#c084fc');
+          for (let k = 0; k < 4; k++) {
+            const a = spin + (k * Math.PI) / 2;
+            this.glowSpheres.add(
+              bx + Math.cos(a) * 1.5,
+              by + Math.sin(a) * 1.3,
+              0.2,
+              0.22,
+              0.22,
+              0.22,
+              k % 2 === 0 ? '#fde047' : '#e879f9'
+            );
+          }
+        } else if (boss.phase === 'stunned') {
+          // 3 estrellas amarillas orbitando encima de la cabeza del jefe
+          const headX = bx;
+          const headY = by + 1.35;
+          this.rings.add(headX, headY, 0, 1.1, 0.7, 0.8, '#facc15', Math.PI * 0.4, 0, frame * 0.05);
+          for (let k = 0; k < 3; k++) {
+            const a = frame * 0.12 + (k * 2 * Math.PI) / 3;
+            const sx = headX + Math.cos(a) * 0.9;
+            const sz = Math.sin(a) * 0.65;
+            const sy = headY + Math.sin(frame * 0.18 + k) * 0.12;
+            this.gems.add(sx, sy, sz, 0.35, 0.45, 0.35, '#facc15', 0, frame * 0.15 + k, 0);
+            this.glowSpheres.add(sx, sy, sz, 0.2, 0.2, 0.2, '#fef08a');
+          }
+        }
+      }
     }
     if (boss && !boss.axeGrabbed && inView(boss.axeX)) {
+      const ax = toX(boss.axeX) + 0.6;
+      const ay = toY(boss.axeY) + 0.5;
       this.cylinders.add(toX(boss.axeX) + 0.5, toY(boss.axeY) + 0.3, 0, 0.12, 1.1, 0.12, '#78350f');
       this.glowBlocks.add(toX(boss.axeX) + 0.7, toY(boss.axeY) + 0.7, 0, 0.5, 0.45, 0.12, '#fde047');
+      if (!boss.defeated) {
+        // Sello / anillo y esfera roja protectora (this.rings / this.ghost)
+        this.rings.add(ax, ay, 0, 1.35, 1.35, 1.2, '#dc2626', 0, frame * 0.08, 0);
+        this.rings.add(ax, ay, 0, 1.15, 1.15, 1.0, '#facc15', Math.PI / 3, 0, frame * 0.06);
+        this.ghost.add(ax, ay, 0, 1.3, 1.3, 1.3, '#ef4444');
+        this.glowBlocks.add(ax, ay - 0.15, 0.25, 0.32, 0.3, 0.15, '#facc15');
+      }
     }
     for (const f of world.bossFires) {
       this.glowSpheres.add(toX(f.x + f.width / 2), toY(f.y + f.height / 2), 0.2, f.width * U, f.height * U, 0.5, '#fb923c');

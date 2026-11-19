@@ -1,4 +1,4 @@
-import { BIOMES, GROUND_ROW, MIN_CAMERA_WORLD_X, STAGES_PER_WORLD, TILE } from '../engine/biomes';
+import { BIOMES, GROUND_ROW, LOGICAL_HEIGHT, MIN_CAMERA_WORLD_X, STAGES_PER_WORLD, TILE } from '../engine/biomes';
 import type {
   Block,
   BlockType,
@@ -107,6 +107,13 @@ function resetSubroomWorld(world: WorldState): void {
   world.echo = null;
   world.echoTrail = undefined;
   world.shafts = undefined;
+  world.risingHazardY = undefined;
+  world.risingHazardSpeed = undefined;
+  world.wrapHorizontal = false;
+  world.gravityDir = undefined;
+  world.onOffState = undefined;
+  world.cameraMode = 'side';
+  world.arenaWave = undefined;
 }
 
 /** Tema 1: Bóveda de Monedas (cavernoso, 24+ monedas, multi_coin, powerup, salida) */
@@ -208,18 +215,18 @@ export function buildStarSanctuary(world: WorldState): void {
   // Plataformas flotantes en 3 pisos
   for (let c = 6; c <= 9; c++) putSubroomBlock(world, c, 9, 'hard');
   for (let c = 17; c <= 20; c++) putSubroomBlock(world, c, 9, 'hard');
-  for (let c = 11; c <= 15; c++) putSubroomBlock(world, c, 6, 'hard');
-  for (let c = 12; c <= 14; c++) putSubroomBlock(world, c, 3, 'hard');
+  for (let c = 11; c <= 15; c++) putSubroomBlock(world, c, 7, 'hard');
 
-  // Bloques especiales
-  putSubroomBlock(world, 12, 5, 'question', 'star');
-  putSubroomBlock(world, 14, 5, 'question', 'one_up');
-  putSubroomBlock(world, 13, 2, 'question', 'powerup');
+  // Bloques especiales (con >= 2 tiles libres debajo para golpearlos desde row 7)
+  putSubroomBlock(world, 12, 4, 'question', 'star');
+  putSubroomBlock(world, 14, 4, 'question', 'one_up');
+  putSubroomBlock(world, 13, 3, 'question', 'powerup');
 
   // Monedas repartidas por el santuario (22 monedas)
   for (let c = 6; c <= 9; c++) addSubroomCoin(world, c, 8);
   for (let c = 17; c <= 20; c++) addSubroomCoin(world, c, 8);
-  for (let c = 11; c <= 15; c++) addSubroomCoin(world, c, 4);
+  addSubroomCoin(world, 11, 5);
+  addSubroomCoin(world, 15, 5);
   for (let c = 12; c <= 14; c++) addSubroomCoin(world, c, 1);
   addSubroomCoin(world, 7, 10);
   addSubroomCoin(world, 8, 10);
@@ -471,6 +478,13 @@ export function enterPipeSubroom(world: WorldState, pipe: Pipe, events: GameEven
     echo: world.echo,
     echoTrail: world.echoTrail,
     shafts: world.shafts,
+    risingHazardY: world.risingHazardY,
+    risingHazardSpeed: world.risingHazardSpeed,
+    wrapHorizontal: world.wrapHorizontal,
+    gravityDir: world.gravityDir,
+    onOffState: world.onOffState,
+    cameraMode: world.cameraMode,
+    arenaWave: world.arenaWave,
     exitX,
     exitY,
   };
@@ -580,6 +594,13 @@ export function exitPipeSubroom(world: WorldState, events: GameEvent[]): void {
   world.echo = snap.echo;
   world.echoTrail = snap.echoTrail;
   world.shafts = snap.shafts;
+  world.risingHazardY = snap.risingHazardY;
+  world.risingHazardSpeed = snap.risingHazardSpeed;
+  world.wrapHorizontal = snap.wrapHorizontal;
+  world.gravityDir = snap.gravityDir;
+  world.onOffState = snap.onOffState;
+  world.cameraMode = snap.cameraMode;
+  world.arenaWave = snap.arenaWave;
 
   // Aplicar ganancias
   world.score = carryScore;
@@ -613,7 +634,19 @@ export function exitPipeSubroom(world: WorldState, events: GameEvent[]): void {
   world.player.onGround = true;
   world.player.crouching = false;
   world.cameraX = Math.max(MIN_CAMERA_WORLD_X, world.player.x - 304);
-  world.cameraY = snap.cameraY ?? 0;
+  const worldRows = world.worldRows ?? 14;
+  if (worldRows > 14) {
+    const maxCamY = worldRows * TILE - LOGICAL_HEIGHT;
+    world.cameraY = Math.max(
+      0,
+      Math.min(maxCamY, world.player.y + world.player.height / 2 - LOGICAL_HEIGHT / 2)
+    );
+  } else {
+    world.cameraY = snap.cameraY ?? 0;
+  }
+  if (world.risingHazardY != null) {
+    world.risingHazardY = Math.max(world.risingHazardY, world.player.y + 8 * TILE);
+  }
   world.status = 'pipe_exit';
   world.statusTimer = 24;
   world.subArea = null;

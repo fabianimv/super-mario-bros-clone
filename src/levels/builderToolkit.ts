@@ -1140,45 +1140,66 @@ export function buildFortressArena(
   // Varied battlements based on ArenaStyle
   switch (arenaStyle) {
     case 0: {
-      // Classic Floating Escape Blocks (Row 5)
-      for (let k = 0; k < 5; k++) {
-        putBlock(ctx, bridgeStart + 3 + k, 5, 'hard');
+      // Style 0 ('on_off_trap'): Tramo central on_block + switch en (bridgeStart+5, 6) + plataforma alcanzable
+      for (let c = bridgeStart + 4; c <= bridgeStart + 8; c++) {
+        putBlock(ctx, c, 10, 'on_block');
       }
+      putBlock(ctx, bridgeStart + 2, 8, 'hard');
+      putBlock(ctx, bridgeStart + 4, 6, 'hard');
+      putBlock(ctx, bridgeStart + 5, 6, 'on_off_switch');
+      putBlock(ctx, bridgeStart + 6, 6, 'question', 'powerup');
+      putBlock(ctx, bridgeStart + 7, 6, 'hard');
       break;
     }
 
     case 1: {
-      // Dual-Tier Battlements: High catwalk at row 6 with drop aperture
+      // Style 1 ('shell_ricochet'): Pasarela superior alcanzable + question powerup + koopa_green en entrada
+      putBlock(ctx, bridgeStart, 8, 'hard');
       for (let k = 0; k < 8; k++) {
         if (k !== 3) {
           putBlock(ctx, bridgeStart + 2 + k, 6, 'hard');
         }
       }
       putBlock(ctx, bridgeStart + 3, 3, 'question', 'powerup');
+      addEnemy(ctx, bridgeStart + 1, 9, 'koopa_green');
       break;
     }
 
     case 2: {
-      // Stepping Pillar Magma Pit: High stone pillars embedded along bridge
+      // Style 2 ('pillar_stomp'): Pilares de refugio en row 8..9 + switch en (bridgeStart+6, 6) + techo rotating/hard
       putBlock(ctx, bridgeStart + 3, 9, 'hard');
+      putBlock(ctx, bridgeStart + 3, 8, 'hard');
       putBlock(ctx, bridgeStart + 6, 8, 'hard');
+      putBlock(ctx, bridgeStart + 6, 6, 'on_off_switch');
+      putBlock(ctx, bridgeStart + 9, 8, 'hard');
       putBlock(ctx, bridgeStart + 9, 9, 'hard');
+      putBlock(ctx, bridgeStart + 5, 4, 'rotating');
       putBlock(ctx, bridgeStart + 6, 4, 'hard');
+      putBlock(ctx, bridgeStart + 7, 4, 'rotating');
       break;
     }
 
     case 3: {
-      // Fortified Throne Bastion: Raised stone dais near axe and stone chandelier
+      // Style 3 ('crown_mirror'): Multi-plataforma con switch (bridgeStart+6, 5), tramo on_block (+4..+7), koopa en entrada
+      for (let c = bridgeStart + 4; c <= bridgeStart + 7; c++) {
+        putBlock(ctx, c, 10, 'on_block');
+      }
       for (let k = axeCol - 3; k < axeCol; k++) {
         putBlock(ctx, k, 9, 'hard');
       }
       putBlock(ctx, bridgeStart + 4, 4, 'hard');
       putBlock(ctx, bridgeStart + 5, 4, 'hard');
+      putBlock(ctx, bridgeStart + 6, 5, 'on_off_switch');
       putBlock(ctx, bridgeStart + 8, 4, 'hard');
+      const koopaCol = bridgeStart + (ctx.partition === 'classic' ? 0 : 1);
+      addEnemy(ctx, koopaCol, 9, 'koopa_green');
       break;
     }
   }
 
+  const puzzleKind = (['on_off_trap', 'shell_ricochet', 'pillar_stomp', 'crown_mirror'] as const)[
+    (ctx.worldNum - 1 + arenaStyle) % 4
+  ];
   const maxHp = 5 + ctx.worldNum * 2;
   const boss: FortressBoss = {
     x: (bridgeStart + 8) * TILE,
@@ -1203,6 +1224,10 @@ export function buildFortressArena(
     axeGrabbed: false,
     bridgeCols,
     bridgeCollapseTimer: 0,
+    puzzleKind,
+    phase: 'idle',
+    phaseTimer: 120,
+    shellSpawnTimer: 160,
   };
 
   return { arenaWidth, boss };

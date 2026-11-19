@@ -550,6 +550,39 @@ assert(
 {
   const w = buildWorldState(3); // Stage 1-4 Fortress!
   assert(w.boss !== null, '1-4 should have Rey Koopa');
+  assert(!w.boss!.defeated, '1-4 boss starts alive and undefeated');
+
+  // 1. Tocar el Hacha con el jefe vivo NO dispara boss_collapse (el sello del jefe protege el hacha)
+  w.player.x = w.boss!.axeX;
+  w.player.y = w.boss!.axeY;
+  stepWorld(w, NO_INPUT, 960);
+  assert(w.status === 'playing', 'Touching Golden Axe with alive boss should NOT start boss_collapse');
+  assert(!w.boss!.axeGrabbed, 'Boss seal must protect the Golden Axe while alive');
+  assert(w.player.vx < 0, 'Touching protected axe pushes plumber backwards');
+
+  // 2. Resolver el acertijo del jefe en 1-4 (trampa ON/OFF de magma)
+  const sw = w.blocks.find((b) => b.type === 'on_off_switch');
+  assert(sw !== undefined, '1-4 boss arena has an on_off_switch puzzle block');
+  // Plomero golpea el interruptor desde abajo
+  w.player.x = sw!.x + 8;
+  w.player.y = sw!.baseY + 34;
+  w.player.vy = -6;
+  stepWorld(w, { ...NO_INPUT, jump: true }, 960);
+  assert(w.onOffState === 'off', 'Hitting on_off_switch toggles onOffState to off');
+
+  // Jefe desciende sobre el puente activando la trampa de magma
+  const bCol = w.boss!.bridgeCols[2] ?? 12;
+  w.boss!.x = bCol * TILE;
+  w.boss!.y = 10.4 * TILE;
+  stepWorld(w, NO_INPUT, 960);
+  assert(w.boss!.phase === 'stunned', 'Boss stunned by magma trap');
+  assert(w.boss!.hp < w.boss!.maxHp, 'Boss damaged by magma trap');
+
+  // Derrotar al jefe
+  w.boss!.hp = 0;
+  w.boss!.defeated = true;
+
+  // 3. Con boss.defeated === true, tocar el Hacha Dorada dispara boss_collapse y avanza a 2-1
   w.player.x = w.boss!.axeX;
   w.player.y = w.boss!.axeY;
   stepWorld(w, NO_INPUT, 960);

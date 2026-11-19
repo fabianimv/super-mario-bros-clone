@@ -106,18 +106,27 @@ assert(frontierLabels.size === FRONTIER_TOTAL_LEVELS, 'Mundo 5 no duplica etique
   assert(w.levelIndex === 1 && w.partition === 'expedition', `Tras A-1 sigue A-2 (llegó a ${w.levelIndex})`);
 
   const c = buildWorldState(3, undefined, 'expedition');
+  assert(c.boss !== null, 'A-4 fortress has a boss');
+  c.boss!.hp = 0;
+  c.boss!.defeated = true;
   c.player.x = c.boss!.axeX;
   c.player.y = c.boss!.axeY;
   for (let f = 0; f < 260 && c.levelIndex === 3; f++) stepWorld(c, NO_INPUT, VIEW_W);
   assert(c.levelIndex === 4 && c.worldLabel === 'S-1', `Tras el castillo A-4 sigue S-1 (llegó a ${c.worldLabel})`);
 
   const mCastle = buildWorldState(3, undefined, 'frontier');
+  assert(mCastle.boss !== null, 'M-4 fortress has a boss');
+  mCastle.boss!.hp = 0;
+  mCastle.boss!.defeated = true;
   mCastle.player.x = mCastle.boss!.axeX;
   mCastle.player.y = mCastle.boss!.axeY;
   for (let f = 0; f < 260 && mCastle.levelIndex === 3; f++) stepWorld(mCastle, NO_INPUT, VIEW_W);
   assert(mCastle.levelIndex === 4 && mCastle.worldLabel === 'V-1', `Tras M-4 sigue V-1 dentro del Mundo 5 (llegó a ${mCastle.worldLabel})`);
 
   const last = buildWorldState(FRONTIER_TOTAL_LEVELS - 1, undefined, 'frontier');
+  assert(last.boss !== null, 'V-4 fortress has a boss');
+  last.boss!.hp = 0;
+  last.boss!.defeated = true;
   last.player.x = last.boss!.axeX;
   last.player.y = last.boss!.axeY;
   for (let f = 0; f < 260 && last.status !== 'victory'; f++) stepWorld(last, NO_INPUT, VIEW_W);

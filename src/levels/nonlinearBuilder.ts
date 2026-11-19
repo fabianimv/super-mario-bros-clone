@@ -9,6 +9,7 @@ import {
 import type {
   ArenaWaveState,
   Block,
+  BossPuzzleKind,
   Checkpoint,
   CoinEntity,
   Enemy,
@@ -45,6 +46,38 @@ export interface CarryState {
   checkpointX?: number | null;
   checkpointY?: number | null;
   doubleJumpAssist?: boolean;
+}
+
+function clearArea(
+  ctx: BuilderCtx,
+  startCol: number,
+  endCol: number,
+  startRow: number,
+  endRow: number
+): void {
+  const minX = startCol * TILE;
+  const maxX = (endCol + 1) * TILE;
+  const minY = startRow * TILE;
+  const maxY = (endRow + 1) * TILE;
+
+  for (let c = startCol; c <= endCol; c++) {
+    for (let r = startRow; r <= endRow; r++) {
+      const key = gridKey(c, r);
+      ctx.blockGrid.delete(key);
+    }
+  }
+  ctx.blocks = ctx.blocks.filter(
+    (b) => !(b.x >= minX && b.x < maxX && b.y >= minY && b.y < maxY)
+  );
+  ctx.enemies = ctx.enemies.filter(
+    (e) => !(e.x >= minX && e.x < maxX && e.y >= minY && e.y < maxY)
+  );
+  ctx.springs = ctx.springs.filter(
+    (s) => !(s.x >= minX && s.x < maxX && s.y >= minY && s.y < maxY)
+  );
+  ctx.coins = ctx.coins.filter(
+    (c) => !(c.x >= minX && c.x < maxX && c.y >= minY && c.y < maxY)
+  );
 }
 
 const TOWER_STAGE_TITLES = [
@@ -99,7 +132,7 @@ export function buildTowerWorldState(
   const worldLabel = getWorldLabel(clampedIdx, 'tower');
   const wrapHorizontal = clampedIdx % 2 === 0;
   const risingHazardSpeed = 0.36 + clampedIdx * 0.025;
-  const risingHazardY = (worldRows + 1) * TILE;
+  const risingHazardY = (worldRows + 4) * TILE;
 
   const ctx: BuilderCtx = {
     levelIndex: clampedIdx,
@@ -142,78 +175,95 @@ export function buildTowerWorldState(
 
   // 3. Ascending floors (never gap > 3.5 tiles, step by 3 rows from worldRows - 5 to 14)
   const summitRow = 14;
-  let floorCount = 0;
+  const allFloorRows: number[] = [];
+  for (let r = worldRows - 5; r >= summitRow + 3; r -= 3) {
+    allFloorRows.push(r);
+  }
 
-  for (let row = worldRows - 5; row >= summitRow + 3; row -= 3) {
+  const shortcutRow = allFloorRows[Math.floor(allFloorRows.length * 0.25)];
+  const checkpointRow = allFloorRows[Math.floor(allFloorRows.length * 0.55)];
+
+  let floorCount = 0;
+  for (const row of allFloorRows) {
     floorCount++;
     const stepType = floorCount % 6;
 
     if (stepType === 0) {
       // Alternating ON / OFF bridges with switch in center
-      for (let c = 4; c <= 10; c++) putBlock(ctx, c, row, 'on_block');
-      for (let c = 17; c <= 23; c++) putBlock(ctx, c, row, 'off_block');
-      putBlock(ctx, 13, row - 3, 'on_off_switch');
+      for (let c = 4; c <= 9; c++) putBlock(ctx, c, row, 'on_block');
+      for (let c = 18; c <= 23; c++) putBlock(ctx, c, row, 'off_block');
+      putBlock(ctx, 13, row - 2, 'on_off_switch');
       addCoin(ctx, 13, row - 4.5);
     } else if (stepType === 1) {
-      // Left terrace + right terrace
-      for (let c = 3; c <= 11; c++) putBlock(ctx, c, row, 'brick');
-      for (let c = 16; c <= 24; c++) putBlock(ctx, c, row, 'brick');
+      // Left terrace + right terrace (wide central opening cols 9..18)
+      for (let c = 2; c <= 8; c++) putBlock(ctx, c, row, 'brick');
+      for (let c = 19; c <= 25; c++) putBlock(ctx, c, row, 'brick');
       if (wrapHorizontal) {
         putBlock(ctx, 0, row, 'question', 'coin');
         putBlock(ctx, totalCols - 1, row, 'question', 'coin');
       }
-      addEnemy(ctx, 7, row - 1, 'koopa_red');
-      addCoinArc(ctx, 5, 5, row - 2);
+      addEnemy(ctx, 5, row - 1, 'koopa_red');
+      addCoinArc(ctx, 4, 4, row - 2);
     } else if (stepType === 2) {
-      // Center bridge with question block
-      for (let c = 8; c <= 19; c++) putBlock(ctx, c, row, 'hard');
-      putBlock(ctx, 13, row - 3, 'question', floorCount % 12 === 2 ? 'powerup' : 'coin');
-      addEnemy(ctx, 10, row - 1, 'galoomba');
+      // Center bridge with question block elevated out of upper floor's opening
+      for (let c = 9; c <= 18; c++) putBlock(ctx, c, row, 'hard');
+      putBlock(ctx, 13, row - 4, 'question', floorCount % 12 === 2 ? 'powerup' : 'coin');
+      addEnemy(ctx, 11, row - 1, 'galoomba');
     } else if (stepType === 3) {
-      // Trampoline launch floor
-      for (let c = 5; c <= 12; c++) putBlock(ctx, c, row, 'brick');
-      for (let c = 15; c <= 22; c++) putBlock(ctx, c, row, 'brick');
-      addSpring(ctx, 8, row);
-      addSpring(ctx, 19, row);
-      addCoin(ctx, 8, row - 4);
-      addCoin(ctx, 19, row - 4);
+      // Trampoline launch floor aligned with stepType 5 openings (cols 8..10 and 17..19)
+      for (let c = 3; c <= 9; c++) putBlock(ctx, c, row, 'brick');
+      for (let c = 18; c <= 24; c++) putBlock(ctx, c, row, 'brick');
+      addSpring(ctx, 9, row);
+      addSpring(ctx, 18, row);
+      addCoin(ctx, 9, row - 4);
+      addCoin(ctx, 18, row - 4);
     } else if (stepType === 4) {
-      // Moving platform swinging horizontally
-      addPlatform(ctx, 10, row, 5, 5 * TILE, 0, 0.04, floorCount * 0.5);
+      // Moving platform swinging horizontally with permanent lateral support terraces
+      addPlatform(ctx, 10, row, 5, 4, 0, 0.032, floorCount * 0.5);
+      for (let c = 3; c <= 6; c++) putBlock(ctx, c, row, 'brick');
+      for (let c = 21; c <= 24; c++) putBlock(ctx, c, row, 'brick');
       if (!wrapHorizontal) {
         // Inner footholds for wall-jumping
         putBlock(ctx, 2, row, 'hard');
-        putBlock(ctx, 3, row, 'brick');
-        putBlock(ctx, totalCols - 4, row, 'brick');
         putBlock(ctx, totalCols - 3, row, 'hard');
       }
       addEnemy(ctx, 13, row - 2, 'paratroopa');
     } else {
-      // Triple stepping stones
-      for (let c = 4; c <= 8; c++) putBlock(ctx, c, row, 'brick');
+      // Triple stepping stones with openings matching trampolines at cols 9 and 18
+      for (let c = 3; c <= 7; c++) putBlock(ctx, c, row, 'brick');
       for (let c = 11; c <= 16; c++) putBlock(ctx, c, row, 'hard');
-      for (let c = 19; c <= 23; c++) putBlock(ctx, c, row, 'brick');
-      putBlock(ctx, 6, row - 3, 'question', 'multi_coin');
+      for (let c = 20; c <= 24; c++) putBlock(ctx, c, row, 'brick');
+      putBlock(ctx, 5, row - 2, 'question', 'multi_coin');
       addEnemy(ctx, 13, row - 1, 'spiny');
     }
   }
 
-  // 4. Midpoint Checkpoint at Math.floor(worldRows * 0.5)
-  const checkpointRow = Math.floor(worldRows * 0.5);
+  // 4. Midpoint Checkpoint and Exit Pipe at checkpointRow
+  clearArea(ctx, 9, 18, checkpointRow - 3, checkpointRow);
   for (let c = 9; c <= 18; c++) {
     putBlock(ctx, c, checkpointRow, 'hard');
   }
   const alreadyAtCheckpoint = carryState?.checkpointY != null && carryState.checkpointY > 0;
   const checkpoint: Checkpoint = {
-    x: 13 * TILE + 6,
+    x: 11 * TILE + 6,
     y: (checkpointRow - 1) * TILE,
     width: 20,
     height: 2 * TILE,
     activated: alreadyAtCheckpoint,
   };
+  ctx.pipes.push({
+    x: 15 * TILE,
+    y: (checkpointRow - 2) * TILE,
+    width: 2 * TILE,
+    height: 2 * TILE,
+    hasPiranha: false,
+    warpKind: 'return',
+    warpAccent: 'emerald',
+    warpLabel: '↩ SALIDA',
+  });
 
-  // 5. Vertical shortcut pipe at ~25% height from bottom
-  const shortcutRow = Math.floor(worldRows * 0.75);
+  // 5. Vertical shortcut pipe at shortcutRow
+  clearArea(ctx, 4, 8, shortcutRow - 3, shortcutRow);
   for (let c = 4; c <= 8; c++) {
     putBlock(ctx, c, shortcutRow, 'hard');
   }
@@ -227,7 +277,7 @@ export function buildTowerWorldState(
     warpAccent: 'gold',
     warpLabel: '▼ BONUS',
     subroomTheme: 'coin_vault',
-    exitPipeCol: 13,
+    exitPipeCol: 15,
   });
 
   // 6. Summit at row 14
@@ -250,6 +300,23 @@ export function buildTowerWorldState(
       castleY: summitRow * TILE - 128,
     };
   } else {
+    const puzzleKind: BossPuzzleKind = worldNum === 1 ? 'shell_ricochet' : 'pillar_stomp';
+    if (worldNum === 1) {
+      // T-4 (shell_ricochet): Koopa + platform + question block
+      addEnemy(ctx, 5, summitRow - 1, 'koopa_green');
+      putBlock(ctx, 8, summitRow - 4, 'hard');
+      putBlock(ctx, 11, summitRow - 5, 'question', 'powerup');
+      putBlock(ctx, 17, summitRow - 4, 'hard');
+    } else {
+      // A-4 (pillar_stomp): High shelter pillars + on_off_switch + ceiling
+      putBlock(ctx, 6, summitRow - 3, 'hard');
+      putBlock(ctx, 6, summitRow - 2, 'hard');
+      putBlock(ctx, 20, summitRow - 3, 'hard');
+      putBlock(ctx, 20, summitRow - 2, 'hard');
+      putBlock(ctx, 13, summitRow - 5, 'on_off_switch');
+      putBlock(ctx, 12, summitRow - 7, 'rotating');
+      putBlock(ctx, 14, summitRow - 7, 'rotating');
+    }
     const maxHp = 5 + worldNum * 2;
     boss = {
       x: 14 * TILE,
@@ -274,6 +341,10 @@ export function buildTowerWorldState(
       axeGrabbed: false,
       bridgeCols: [],
       bridgeCollapseTimer: 0,
+      puzzleKind,
+      phase: 'idle',
+      phaseTimer: 120,
+      shellSpawnTimer: 150,
     };
   }
 
@@ -299,7 +370,7 @@ export function buildTowerWorldState(
   // 8. Player spawn
   const player = createInitialPlayer(carryState?.powerState ?? 0, false);
   if (alreadyAtCheckpoint && carryState?.checkpointY != null) {
-    player.x = carryState.checkpointX ?? 13 * TILE + 5;
+    player.x = carryState.checkpointX ?? 11 * TILE + 5;
     player.y = carryState.checkpointY;
   } else {
     player.x = 13 * TILE + 5;
@@ -427,29 +498,29 @@ export function buildFlipWorldState(
   }
 
   // 2. Interior Walls dividing Left Wing (cols 2..19), Nexo Central (cols 20..31), Right Wing (cols 32..49)
-  // Left dividing wall at col 19 with doorways at rows 4..6, 12..14, 20..22
+  // Left dividing wall at col 19 with doorways at rows 2..4, 12..14, 21..23
   for (let r = 2; r <= 23; r++) {
-    if ((r >= 4 && r <= 6) || (r >= 12 && r <= 14) || (r >= 20 && r <= 22)) {
+    if ((r >= 2 && r <= 4) || (r >= 12 && r <= 14) || (r >= 21 && r <= 23)) {
       continue;
     }
     putBlock(ctx, 19, r, 'hard');
   }
-  // Right dividing wall at col 32 with doorways at rows 4..6, 12..14, 20..22
+  // Right dividing wall at col 32 with doorways at rows 2..4, 12..14, 21..23
   for (let r = 2; r <= 23; r++) {
-    if ((r >= 4 && r <= 6) || (r >= 12 && r <= 14) || (r >= 20 && r <= 22)) {
+    if ((r >= 2 && r <= 4) || (r >= 12 && r <= 14) || (r >= 21 && r <= 23)) {
       continue;
     }
     putBlock(ctx, 32, r, 'hard');
   }
 
   // 3. Mid-floor partitions creating multi-level chambers
-  // Left chamber mid-floor at row 15 (cols 3..17, open at cols 10..12)
-  for (let c = 3; c <= 17; c++) {
+  // Left chamber mid-floor at row 15 (cols 3..21, open at cols 10..12)
+  for (let c = 3; c <= 21; c++) {
     if (c >= 10 && c <= 12) continue;
     putBlock(ctx, c, 15, 'brick');
   }
-  // Right chamber mid-floor at row 15 (cols 34..48, open at cols 39..41)
-  for (let c = 34; c <= 48; c++) {
+  // Right chamber mid-floor at row 15 (cols 30..48, open at cols 39..41)
+  for (let c = 30; c <= 48; c++) {
     if (c >= 39 && c <= 41) continue;
     putBlock(ctx, c, 15, 'brick');
   }
@@ -457,13 +528,13 @@ export function buildFlipWorldState(
   // 4. Inverted Ceiling Platforms for gravityDir = -1
   for (let c = 5; c <= 11; c++) putBlock(ctx, c, 3, 'hard');
   for (let c = 13; c <= 17; c++) putBlock(ctx, c, 4, 'brick');
-  for (let c = 23; c <= 28; c++) putBlock(ctx, c, 4, 'hard');
+  for (let c = 23; c <= 28; c++) putBlock(ctx, c, 6, 'hard');
   for (let c = 34; c <= 39; c++) putBlock(ctx, c, 3, 'brick');
   for (let c = 41; c <= 47; c++) putBlock(ctx, c, 4, 'hard');
 
   // Question blocks on ceiling (hit upside down!)
   putBlock(ctx, 8, 3, 'question', 'powerup');
-  putBlock(ctx, 25, 4, 'question', 'star');
+  putBlock(ctx, 25, 6, 'question', 'star');
   putBlock(ctx, 44, 4, 'question', 'multi_coin');
 
   // 5. ON / OFF Switches & Blocks (Puzzles 100% Solvable with alternate paths)
@@ -474,16 +545,16 @@ export function buildFlipWorldState(
   // Switch in Right Upper Wing
   putBlock(ctx, 44, 8, 'on_off_switch');
   // Inverted switch on the ceiling of Central Nexo
-  putBlock(ctx, 26, 3, 'on_off_switch');
+  putBlock(ctx, 26, 4, 'on_off_switch');
 
-  // Alternating ON / OFF gates in doorways
+  // Alternating ON / OFF gates in middle doorways (rows 12..14)
+  putBlock(ctx, 19, 12, 'on_block');
   putBlock(ctx, 19, 13, 'on_block');
   putBlock(ctx, 19, 14, 'on_block');
-  putBlock(ctx, 19, 21, 'off_block');
 
+  putBlock(ctx, 32, 12, 'off_block');
   putBlock(ctx, 32, 13, 'off_block');
   putBlock(ctx, 32, 14, 'off_block');
-  putBlock(ctx, 32, 21, 'on_block');
 
   // Puzzle bridges over pits in wings
   for (let c = 7; c <= 9; c++) putBlock(ctx, c, 15, 'on_block');
@@ -501,8 +572,9 @@ export function buildFlipWorldState(
     warpLabel: '↩ TUBO B',
     pairPipeIndex: 1,
   });
-  // Foothold for Pipe 1 in Nexo Upper Balcony
-  for (let c = 21; c <= 24; c++) putBlock(ctx, c, 11, 'hard');
+  // Foothold for Pipe 1 in Nexo Upper Balcony (extended to col 30 in stageNum 4 for boss arena)
+  const maxUpperBalconyCol = stageNum === 4 ? 30 : 24;
+  for (let c = 21; c <= maxUpperBalconyCol; c++) putBlock(ctx, c, 11, 'hard');
   ctx.pipes.push({
     x: 22 * TILE,
     y: 9 * TILE,
@@ -566,11 +638,29 @@ export function buildFlipWorldState(
   let boss: FortressBoss | null = null;
   if (stageNum === 4) {
     // Upper Sanctum Boss
+    const puzzleKind: BossPuzzleKind = worldNum === 1 ? 'on_off_trap' : 'crown_mirror';
+    if (worldNum === 1) {
+      // G-4 (on_off_trap): on_block balcony floor + on_off_switch + powerup
+      putBlock(ctx, 25, 11, 'on_block');
+      putBlock(ctx, 26, 11, 'on_block');
+      putBlock(ctx, 27, 11, 'on_block');
+      putBlock(ctx, 24, 7, 'on_off_switch');
+      putBlock(ctx, 23, 7, 'question', 'powerup');
+      putBlock(ctx, 28, 8, 'hard');
+    } else {
+      // I-4 (crown_mirror): on_block section + on_off_switch + koopa_green support
+      putBlock(ctx, 25, 11, 'on_block');
+      putBlock(ctx, 26, 11, 'on_block');
+      putBlock(ctx, 24, 6, 'on_off_switch');
+      putBlock(ctx, 25, 4, 'hard');
+      putBlock(ctx, 27, 7, 'hard');
+      addEnemy(ctx, 21, 10, 'koopa_green');
+    }
     const maxHp = 5 + worldNum * 2;
     boss = {
-      x: 26 * TILE,
-      y: 6 * TILE - 60,
-      homeX: 26 * TILE,
+      x: 25 * TILE,
+      y: 11 * TILE - 60,
+      homeX: 25 * TILE,
       vx: -1.1,
       vy: 0,
       width: 56,
@@ -578,18 +668,22 @@ export function buildFlipWorldState(
       hp: maxHp,
       maxHp,
       facing: -1,
-      onGround: false,
+      onGround: true,
       jumpTimer: 75,
       fireTimer: 95,
       roarTimer: 0,
       hurtFlashTimer: 0,
       defeated: false,
       fallingInLava: false,
-      axeX: 30 * TILE,
-      axeY: 5 * TILE,
+      axeX: 29 * TILE,
+      axeY: 9 * TILE,
       axeGrabbed: false,
       bridgeCols: [],
       bridgeCollapseTimer: 0,
+      puzzleKind,
+      phase: 'idle',
+      phaseTimer: 120,
+      shellSpawnTimer: 150,
     };
   }
 
@@ -598,7 +692,7 @@ export function buildFlipWorldState(
   const gemPositions: Array<{ col: number; row: number }> = [
     { col: 10, row: 6 }, // Left Upper Chamber
     { col: 42, row: 20 }, // Right Lower Chamber
-    { col: 25, row: 3 }, // Nexo Inverted Ceiling
+    { col: 24, row: 3 }, // Nexo Inverted Ceiling
     { col: 45, row: 6 }, // Right Upper Chamber
     { col: 8, row: 20 }, // Left Lower Chamber
   ];
@@ -826,9 +920,9 @@ export function buildStarRoadWorldState(
     addEnemy(ctx, 6, 7, 'koopa_red');
     addEnemy(ctx, 19, 7, 'koopa_red');
     addEnemy(ctx, 8, 11, 'galoomba');
-    addEnemy(ctx, 17, 11, 'galoomba');
+    addEnemy(ctx, 16, 11, 'galoomba');
     if (clampedIdx >= 1) addEnemy(ctx, 12, 4, 'paratroopa');
-    if (clampedIdx >= 2) addEnemy(ctx, 4, 11, 'spiny');
+    if (clampedIdx >= 2) addEnemy(ctx, 17, 11, 'spiny');
     if (clampedIdx >= 3) addEnemy(ctx, 21, 11, 'chuck');
 
     const arenaWave: ArenaWaveState = {
@@ -851,6 +945,11 @@ export function buildStarRoadWorldState(
 
     let boss: FortressBoss | null = null;
     if (stageNum === 4) {
+      // Solid floor under central boss with on_block puzzle integration
+      for (let c = 11; c <= 15; c++) {
+        ctx.lavaCols.delete(c);
+        putBlock(ctx, c, 12, 'on_block');
+      }
       const maxHp = 6;
       boss = {
         x: 13 * TILE,
@@ -863,18 +962,22 @@ export function buildStarRoadWorldState(
         hp: maxHp,
         maxHp,
         facing: -1,
-        onGround: false,
+        onGround: true,
         jumpTimer: 60,
         fireTimer: 80,
         roarTimer: 0,
         hurtFlashTimer: 0,
         defeated: false,
         fallingInLava: false,
-        axeX: 23 * TILE,
-        axeY: 10 * TILE,
+        axeX: 20 * TILE,
+        axeY: 6 * TILE,
         axeGrabbed: false,
         bridgeCols: [],
         bridgeCollapseTimer: 0,
+        puzzleKind: 'on_off_trap',
+        phase: 'idle',
+        phaseTimer: 120,
+        shellSpawnTimer: 150,
       };
     }
 
@@ -993,8 +1096,8 @@ export function buildStarRoadWorldState(
     for (let c = 15; c <= 17; c++) putBlock(ctx, c, GROUND_ROW, 'on_block');
     for (let c = 18; c <= 20; c++) putBlock(ctx, c, GROUND_ROW, 'off_block');
 
-    // Segment 2: runway (cols 21..38)
-    for (let c = 21; c <= 38; c++) {
+    // Segment 2: runway (cols 21..39)
+    for (let c = 21; c <= 39; c++) {
       putBlock(ctx, c, GROUND_ROW, 'ground_top');
       putBlock(ctx, c, GROUND_ROW + 1, 'ground_deep');
     }
@@ -1003,12 +1106,12 @@ export function buildStarRoadWorldState(
     addEnemy(ctx, 34, 11, 'paratroopa');
     addCoinArc(ctx, 25, 5, 8);
 
-    // Chasm 2 (cols 39..45): Floating moving platform
-    addPlatform(ctx, 40, GROUND_ROW, 4, 3 * TILE, 0, 0.04);
-    for (let c = 39; c <= 45; c++) ctx.pits.add(c);
+    // Chasm 2 (cols 40..44): Floating moving platform
+    addPlatform(ctx, 40, GROUND_ROW, 4, 2.5, 0, 0.035);
+    for (let c = 40; c <= 44; c++) ctx.pits.add(c);
 
-    // Segment 3: runway (cols 46..68)
-    for (let c = 46; c <= 68; c++) {
+    // Segment 3: runway (cols 45..68)
+    for (let c = 45; c <= 68; c++) {
       putBlock(ctx, c, GROUND_ROW, 'ground_top');
       putBlock(ctx, c, GROUND_ROW + 1, 'ground_deep');
     }
@@ -1070,6 +1173,12 @@ export function buildStarRoadWorldState(
       };
     } else {
       const maxHp = 7;
+      addEnemy(ctx, totalCols - 18, GROUND_ROW - 1, 'koopa_green');
+      putBlock(ctx, totalCols - 16, 7, 'hard');
+      putBlock(ctx, totalCols - 14, 5, 'on_off_switch');
+      putBlock(ctx, totalCols - 13, 7, 'question', 'powerup');
+      putBlock(ctx, totalCols - 11, 7, 'hard');
+
       boss = {
         x: (totalCols - 14) * TILE,
         y: GROUND_ROW * TILE - 60,
@@ -1093,6 +1202,10 @@ export function buildStarRoadWorldState(
         axeGrabbed: false,
         bridgeCols: [],
         bridgeCollapseTimer: 0,
+        puzzleKind: 'shell_ricochet',
+        phase: 'idle',
+        phaseTimer: 120,
+        shellSpawnTimer: 150,
       };
     }
 

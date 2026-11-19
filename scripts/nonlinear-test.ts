@@ -44,6 +44,7 @@ import {
   exitPipeSubroom,
 } from '../src/levels/subroomBuilder';
 import { World3DScene } from '../src/renderer3d/scene3d';
+import { DEFAULT_PROGRESS } from '../src/storage/saveStorage';
 
 const VIEW_W = 970;
 const SCREEN_W = 844;
@@ -541,12 +542,15 @@ for (let lvl = 0; lvl < 4; lvl++) {
   assert(w.arenaWave!.current === 1, 'Inicia oleada 1');
   const onOff0 = w.onOffState ?? 'on';
 
-  // Meta bloqueada mientras la arena esté activa
+  // Meta bloqueada mientras la arena esté activa (sin repeler al jugador ni activar secuencia)
   w.player.x = w.flagpole!.x;
   w.player.y = w.flagpole!.y + 50;
   stepWorld(w, NO_INPUT, VIEW_W);
   assert(w.status === 'playing', 'Meta bloqueada: no se puede tocar asta durante la arena');
-  assert(w.player.x < w.flagpole!.x, 'Jugador repelido lejos de la meta');
+  assert(
+    Math.abs(w.player.x - w.flagpole!.x) <= 2,
+    'Jugador cruza libremente por col 13 sin ser repelido por pared invisible'
+  );
 
   // Limpiar oleada 1
   for (const en of w.enemies) en.state = 'knocked';
@@ -739,5 +743,340 @@ const dummyWorld = (): WorldState => {
     'WarpChamber: tiene tubo de retorno'
   );
 }
+
+// ============================================================================
+// 12g. Paquete 3 Argon — Verificaciones Anti-Regresión 60 Hz y Acertijos SMW
+// ============================================================================
+console.log('   - 12g. Verificando Anti-Regresión 60 Hz y Acertijos de Jefes SMW...');
+
+// 1. Flip Torre C (todas G-1..I-4): caminata real desde spawn hacia la derecha cruzando col 28.31 con 0 gemas hasta > 35*TILE
+for (let lvl = 0; lvl < 8; lvl++) {
+  const w = buildWorldState(lvl, undefined, 'flip');
+  assert(w.gemsCollected === 0 || w.gemsCollected === undefined, `Flip ${w.worldLabel}: 0 gemas iniciales`);
+  for (let f = 0; f < 300 && w.player.x <= 35 * TILE; f++) {
+    stepWorld(w, { ...NO_INPUT, right: true, run: true }, VIEW_W);
+  }
+  assert(
+    w.player.x > 35 * TILE,
+    `Flip ${w.worldLabel}: Plomero cruza col 28.31 hacia Ala Derecha / Torre C sin bloqueo de meta (x=${w.player.x.toFixed(1)})`
+  );
+
+  // Suelo firme bajo jefe en G-4 e I-4 (lvl 3 y 7)
+  if (lvl === 3 || lvl === 7) {
+    assert(w.boss != null, `Flip ${w.worldLabel}: Jefe presente en etapa 4`);
+    const bossCol = Math.floor(w.boss!.x / TILE);
+    const bossFootRow = Math.floor((w.boss!.y + w.boss!.height) / TILE);
+    const solidUnderBoss =
+      w.blockGrid.has(gridKey(bossCol, bossFootRow)) ||
+      w.blockGrid.has(gridKey(bossCol + 1, bossFootRow));
+    assert(solidUnderBoss, `Flip ${w.worldLabel}: Suelo firme bajo el jefe (fila ${bossFootRow})`);
+  }
+}
+
+// 2. Tower Ascenso Real (T-1..A-4)
+// 2a. Plataformas con rangeX <= 6*TILE y velocidad suave en tower y star_road
+for (const part of ['tower', 'star_road'] as const) {
+  for (let lvl = 0; lvl < 8; lvl++) {
+    const w = buildWorldState(lvl, undefined, part);
+    for (const pl of w.platforms) {
+      assert(
+        pl.rangeX <= 6 * TILE,
+        `${part} ${w.worldLabel}: plataforma móvil con rangeX <= 6 tiles (es ${pl.rangeX} px)`
+      );
+      assert(
+        Math.abs(pl.rangeX * pl.speed) <= 8,
+        `${part} ${w.worldLabel}: plataforma móvil con velocidad <= 8 px/frame (es ${Math.abs(pl.rangeX * pl.speed).toFixed(2)})`
+      );
+    }
+  }
+}
+
+// 2b. Ninguna tubería tapada y checkpoints con >= 2 tiles libres arriba en tower
+for (let lvl = 0; lvl < 8; lvl++) {
+  const w = buildWorldState(lvl, undefined, 'tower');
+  for (const pipe of w.pipes) {
+    const topRow = Math.floor(pipe.y / TILE) - 1;
+    const colStart = Math.floor(pipe.x / TILE);
+    const colEnd = Math.floor((pipe.x + pipe.width - 1) / TILE);
+    for (let c = colStart; c <= colEnd; c++) {
+      assert(
+        !w.blockGrid.has(gridKey(c, topRow)),
+        `Tower ${w.worldLabel}: boca superior de tubería en col ${c}, row ${topRow} sin bloques tapándola`
+      );
+    }
+  }
+  if (w.checkpoint) {
+    const cpCol = Math.floor(w.checkpoint.x / TILE);
+    const cpRow = Math.floor(w.checkpoint.y / TILE);
+    for (let r = cpRow - 2; r < cpRow; r++) {
+      assert(
+        !w.blockGrid.has(gridKey(cpCol, r)),
+        `Tower ${w.worldLabel}: checkpoint con >= 2 tiles libres arriba en col ${cpCol}, row ${r}`
+      );
+    }
+  }
+}
+
+// 2c. Simulación real de salto en T-1: Piso 1 -> Piso 2 -> Piso 3
+{
+  const w = buildWorldState(0, undefined, 'tower');
+  w.enemies = []; // Aislar simulación geométrica y plataformas libres de enemigos
+  w.player.x = 7 * TILE;
+  w.player.y = 67 * TILE - w.player.height;
+  w.player.onGround = true;
+  w.player.vy = 0;
+
+  // Salto de Piso 1 a Piso 2
+  for (let f = 0; f < 35; f++) {
+    stepWorld(w, { ...NO_INPUT, right: true, jump: f < 10 }, VIEW_W);
+  }
+  const footRow2 = (w.player.y + w.player.height) / TILE;
+  assert(
+    Math.abs(footRow2 - 64) <= 1.0 && w.player.onGround,
+    `T-1: Plomero asciende y aterriza en Piso 2 (row 64, footRow=${footRow2.toFixed(2)})`
+  );
+
+  // Salto de Piso 2 a Piso 3
+  for (let f = 0; f < 35; f++) {
+    stepWorld(w, { ...NO_INPUT, left: true, jump: f < 12 }, VIEW_W);
+  }
+  const footRow3 = (w.player.y + w.player.height) / TILE;
+  assert(
+    Math.abs(footRow3 - 61) <= 1.0 && w.player.onGround,
+    `T-1: Plomero sube a Piso 3 sin cabezazos que lo boten (footRow=${footRow3.toFixed(2)})`
+  );
+
+  // Rebote en trampolín SIN mantener A subiendo >= 4.5 tiles
+  const sp = w.springs[0];
+  assert(sp != null, 'T-1 tiene trampolín en Piso 3');
+  w.player.x = sp.x;
+  w.player.y = sp.y - w.player.height - 4;
+  w.player.vy = 4;
+  w.player.onGround = false;
+  const startY = sp.y;
+  let minY = sp.y;
+  for (let f = 0; f < 45; f++) {
+    stepWorld(w, NO_INPUT, VIEW_W);
+    if (w.player.y < minY) minY = w.player.y;
+  }
+  const tilesClimbed = (startY - minY) / TILE;
+  assert(
+    tilesClimbed >= 4.5,
+    `T-1: Rebote en resorte sin presionar A asciende >= 4.5 tiles (${tilesClimbed.toFixed(2)} tiles)`
+  );
+
+  // Salida limpia de sub-sala al tubo de checkpointRow sin daño de magma
+  const bonusPipe = w.pipes.find((p) => p.warpKind === 'subroom');
+  assert(bonusPipe != null, 'T-1 tiene tubería ▼ BONUS');
+  w.player.x = bonusPipe!.x + (bonusPipe!.width - w.player.width) / 2;
+  w.player.y = bonusPipe!.y - w.player.height;
+  w.player.onGround = true;
+  stepWorld(w, { ...NO_INPUT, down: true }, VIEW_W);
+  for (let f = 0; f < 30; f++) stepWorld(w, NO_INPUT, VIEW_W);
+  assert(w.subArea === 'subroom', 'T-1: Plomero ingresa a la bóveda de monedas');
+  for (let f = 0; f < 24; f++) stepWorld(w, NO_INPUT, VIEW_W);
+
+  const retPipe = w.pipes.find((p) => p.warpKind === 'return');
+  assert(retPipe != null, 'T-1: Tubo de retorno existe en sub-sala');
+  w.player.x = retPipe!.x + (retPipe!.width - w.player.width) / 2;
+  w.player.y = retPipe!.y - w.player.height;
+  w.player.onGround = true;
+  stepWorld(w, { ...NO_INPUT, down: true }, VIEW_W);
+  for (let f = 0; f < 30; f++) stepWorld(w, NO_INPUT, VIEW_W);
+  for (let f = 0; f < 24; f++) stepWorld(w, NO_INPUT, VIEW_W);
+
+  assert(w.subArea === null && w.status === 'playing', 'T-1: Retorna a la torre en modo playing');
+  assert(!w.player.dead, 'T-1: Plomero con vida tras retornar');
+  assert(
+    w.risingHazardY != null && w.risingHazardY > w.player.y + 4 * TILE,
+    'T-1: Magma lejos de la salida del checkpoint sin daño al jugador'
+  );
+}
+
+// 3. Star Road
+// 3a. 60 frames quietos en ★-1..★-4 sin morir (cero muertes en spawn Frame 1)
+for (let lvl = 0; lvl < 4; lvl++) {
+  const w = buildWorldState(lvl, undefined, 'star_road');
+  for (let f = 0; f < 60; f++) stepWorld(w, NO_INPUT, VIEW_W);
+  assert(
+    !w.player.dead && w.status === 'playing',
+    `Star Road ★-${lvl + 1}: 60 frames sin muerte en spawn`
+  );
+}
+
+// 3b. Cruce libre por col 13 en Oleada 1
+{
+  const w0 = buildWorldState(0, undefined, 'star_road');
+  w0.player.x = 9 * TILE;
+  w0.player.y = 12 * TILE - w0.player.height;
+  w0.player.onGround = true;
+  for (let f = 0; f < 40; f++) {
+    stepWorld(w0, { ...NO_INPUT, right: true, jump: f < 16, run: true }, VIEW_W);
+  }
+  assert(
+    w0.player.x > 13.5 * TILE && !w0.player.dead,
+    'Star Road ★-1: Cruce libre por col 13 sin bloqueo de candado en meta'
+  );
+}
+
+// 3c. Hacha de ★-4 fuera de tuberías y bloques
+{
+  const wBoss = buildWorldState(3, undefined, 'star_road');
+  assert(wBoss.boss != null, 'Star Road ★-4 tiene jefe');
+  const axeCol = Math.floor(wBoss.boss!.axeX / TILE);
+  const axeRow = Math.floor(wBoss.boss!.axeY / TILE);
+  assert(!wBoss.blockGrid.has(gridKey(axeCol, axeRow)), 'Star Road ★-4: Hacha dorada fuera de bloques');
+  const axeInPipe = wBoss.pipes.some(
+    (p) =>
+      wBoss.boss!.axeX < p.x + p.width &&
+      wBoss.boss!.axeX + TILE > p.x &&
+      wBoss.boss!.axeY < p.y + p.height &&
+      wBoss.boss!.axeY + TILE > p.y
+  );
+  assert(!axeInPipe, 'Star Road ★-4: Hacha dorada fuera de tuberías sólidas');
+}
+
+// 4. star_sanctuary: golpe real con la cabeza debajo de los 3 [?] ((12,4), (14,4), (13,3))
+{
+  const wSanct = dummyWorld();
+  buildStarSanctuary(wSanct);
+  const targets = [
+    { col: 12, row: 4, item: 'star' },
+    { col: 14, row: 4, item: 'one_up' },
+    { col: 13, row: 3, item: 'powerup' },
+  ];
+  for (const tgt of targets) {
+    const blk = wSanct.blockGrid.get(gridKey(tgt.col, tgt.row));
+    assert(blk != null && blk.content === tgt.item, `Star Sanctuary: bloque [?] en (${tgt.col},${tgt.row}) con ${tgt.item}`);
+    wSanct.player.x = tgt.col * TILE + 4;
+    wSanct.player.y = tgt.row * TILE + 34;
+    wSanct.player.vy = -6;
+    for (let f = 0; f < 10; f++) stepWorld(wSanct, { ...NO_INPUT, jump: true }, VIEW_W);
+    assert(blk!.type === 'empty', `Star Sanctuary: bloque (${tgt.col},${tgt.row}) golpeado con la cabeza`);
+  }
+}
+
+// 5. Acertijos de Jefes SMW (smw Y-4..K-4 y classic)
+// 5a. Trampa ON/OFF de magma
+{
+  const wTrap = buildWorldState(3, undefined, 'classic');
+  wTrap.cameraX = wTrap.boss!.x - 200;
+  wTrap.player.x = wTrap.boss!.x - 100;
+  wTrap.boss!.puzzleKind = 'on_off_trap';
+  wTrap.onOffState = 'off';
+  const preTrapHp = wTrap.boss!.hp;
+  wTrap.boss!.x = (wTrap.boss!.bridgeCols[2] ?? 12) * TILE;
+  wTrap.boss!.y = 10.4 * TILE;
+  stepWorld(wTrap, NO_INPUT, VIEW_W);
+  assert(wTrap.boss!.hp < preTrapHp, 'Jefe sufre daño por trampa de magma (-3 HP)');
+  const trapPhase: string = wTrap.boss?.phase ?? '';
+  assert(trapPhase === 'stunned', 'Jefe aturdido tras caer en trampa de magma');
+  const trapOnOff: string = wTrap.onOffState ?? '';
+  assert(trapOnOff === 'on', 'onOffState se restablece a ON para reponer el puente');
+}
+
+// 5b. Rebote seguro sobre jefe blindado desde arriba
+{
+  const wBounce = buildWorldState(3, undefined, 'classic');
+  wBounce.cameraX = wBounce.boss!.x - 200;
+  wBounce.boss!.puzzleKind = 'on_off_trap';
+  wBounce.boss!.phase = 'idle';
+  wBounce.player.x = wBounce.boss!.x + 10;
+  wBounce.player.y = wBounce.boss!.y - wBounce.player.height + 4;
+  wBounce.player.vy = 5;
+  const livesPre = wBounce.lives;
+  stepWorld(wBounce, NO_INPUT, VIEW_W);
+  assert(wBounce.player.vy < 0, 'Rebote seguro hacia arriba sobre jefe blindado');
+  assert(
+    wBounce.lives === livesPre && wBounce.status === 'playing',
+    'Plomero no recibe daño al rebotar sobre jefe blindado'
+  );
+}
+
+// 5c. Ruptura de shell_spin con caparazón deslizante y llave inglesa
+{
+  // Con caparazón deslizante
+  const wShell = buildWorldState(3, undefined, 'classic');
+  wShell.cameraX = wShell.boss!.x - 200;
+  wShell.player.x = wShell.boss!.x - 100;
+  wShell.boss!.phase = 'shell_spin';
+  wShell.boss!.phaseTimer = 100;
+  const preShellHp = wShell.boss!.hp;
+  wShell.enemies = [
+    {
+      id: 999,
+      type: 'koopa_green',
+      state: 'shell_slide',
+      x: wShell.boss!.x - 20,
+      y: wShell.boss!.y + 10,
+      baseY: wShell.boss!.y + 10,
+      vx: 5.5,
+      vy: 0,
+      width: 26,
+      height: 26,
+      facing: 1,
+      onGround: true,
+      hp: 1,
+      stateTimer: 0,
+      kickGraceTimer: 0,
+      shellCombo: 0,
+      animTimer: 0,
+      active: true,
+    },
+  ];
+  stepWorld(wShell, NO_INPUT, VIEW_W);
+  assert(wShell.boss!.hp < preShellHp, 'Caparazón deslizante daña al jefe en shell_spin (-2 HP)');
+  const shellBossPhase: string = wShell.boss?.phase ?? '';
+  assert(shellBossPhase === 'stunned', 'Caparazón deslizante aturde al jefe rompiendo su giro');
+
+  // Con llave inglesa
+  const wWrench = buildWorldState(3, undefined, 'classic');
+  wWrench.cameraX = wWrench.boss!.x - 200;
+  wWrench.player.x = wWrench.boss!.x - 100;
+  wWrench.boss!.phase = 'shell_spin';
+  wWrench.boss!.phaseTimer = 100;
+  const preWrenchHp = wWrench.boss!.hp;
+  wWrench.wrench = {
+    x: wWrench.boss!.x - 10,
+    y: wWrench.boss!.y + 10,
+    vx: 6,
+    vy: 0,
+    width: 24,
+    height: 24,
+    dir: 1,
+    phase: 'out',
+    travelled: 0,
+    timer: 0,
+    spin: 0,
+    carryId: null,
+    hitBoss: false,
+  };
+  stepWorld(wWrench, NO_INPUT, VIEW_W);
+  assert(wWrench.boss!.hp < preWrenchHp, 'Llave inglesa daña al jefe en shell_spin (-2 HP)');
+  const wrenchBossPhase: string = wWrench.boss?.phase ?? '';
+  assert(wrenchBossPhase === 'stunned', 'Llave inglesa aturde al jefe rompiendo su giro');
+}
+
+// 5d. pillar_stomp aturdido por switch
+{
+  const wPillar = buildWorldState(3, undefined, 'classic');
+  wPillar.cameraX = wPillar.boss!.x - 200;
+  wPillar.boss!.puzzleKind = 'pillar_stomp';
+  wPillar.boss!.phase = 'idle';
+  const swPillar = wPillar.blocks.find((b) => b.type === 'on_off_switch')!;
+  wPillar.player.x = swPillar.x + 8;
+  wPillar.player.y = swPillar.baseY + 34;
+  wPillar.player.vy = -6;
+  stepWorld(wPillar, { ...NO_INPUT, jump: true }, VIEW_W);
+  const pillarBossPhase: string = wPillar.boss?.phase ?? '';
+  assert(pillarBossPhase === 'stunned', 'Pillar Stomp aturdido por interruptor');
+  assert(wPillar.boss!.hp < wPillar.boss!.maxHp, 'Pillar Stomp sufre daño al activar switch');
+}
+
+// 5e. Desbloqueo de star_road por defecto (secretUnlocked === true)
+assert(
+  DEFAULT_PROGRESS.secretUnlocked === true,
+  'star_road desbloqueado por defecto en DEFAULT_PROGRESS (secretUnlocked === true)'
+);
 
 console.log(`\n✔ ALL ${passed} NON-LINEAR & SECRET PIPE VERIFICATIONS PASSED 100%!`);

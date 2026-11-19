@@ -46,7 +46,7 @@ export const DEFAULT_PROGRESS: SaveProgress = {
   starRoadUnlockedLevel: 0,
   starRoadClearedLevels: [],
   starRoadBestStageScores: {},
-  secretUnlocked: false,
+  secretUnlocked: true,
   lastPartition: 'smw',
 };
 
@@ -110,7 +110,7 @@ export async function loadProgress(): Promise<SaveProgress> {
       starRoadUnlockedLevel: typeof parsed.starRoadUnlockedLevel === 'number' ? parsed.starRoadUnlockedLevel : 0,
       starRoadClearedLevels: Array.isArray(parsed.starRoadClearedLevels) ? parsed.starRoadClearedLevels : [],
       starRoadBestStageScores: parsed.starRoadBestStageScores ?? {},
-      secretUnlocked: typeof parsed.secretUnlocked === 'boolean' ? parsed.secretUnlocked : false,
+      secretUnlocked: true,
       lastPartition:
         parsed.lastPartition === 'classic' ||
         parsed.lastPartition === 'smw' ||

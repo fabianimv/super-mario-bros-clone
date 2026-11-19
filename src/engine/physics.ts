@@ -13,7 +13,7 @@ import {
   updateMechanics,
   windPush,
 } from './mechanics';
-import { enforceGoalLock, updateObjectives } from './objectives';
+import { enforceGoalLock, isGoalLocked, updateObjectives } from './objectives';
 import {
   checkPipeEntry,
   exitPipeSubroom,
@@ -40,6 +40,7 @@ import type {
   Block,
   Enemy,
   EnemyType,
+  FortressBoss,
   GameEvent,
   InputState,
   MovingPlatform,
@@ -188,6 +189,30 @@ interface SolidHit extends Rect {
   platform?: MovingPlatform;
 }
 
+function isPassableAscentLedge(world: WorldState, s: SolidHit): boolean {
+  if (s.block?.type === 'bridge') return true;
+  if (world.partition === 'tower' && s.block) {
+    const b = s.block;
+    const worldRows = world.worldRows ?? 14;
+    const isInterior =
+      b.col > 1 &&
+      b.col < world.totalCols - 2 &&
+      b.row < worldRows - 2;
+    if (
+      isInterior &&
+      b.content == null &&
+      (b.type === 'brick' ||
+        b.type === 'hard' ||
+        b.type === 'on_block' ||
+        b.type === 'off_block' ||
+        b.type === 'bridge')
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function collectNearbySolids(world: WorldState, box: Rect, includeHidden = false): SolidHit[] {
   const results: SolidHit[] = [];
   const worldRows = world.worldRows ?? WORLD_ROWS;
@@ -231,6 +256,33 @@ function removeBlock(world: WorldState, block: Block): void {
   world.blockGrid.delete(gridKey(block.col, block.row));
   const idx = world.blocks.indexOf(block);
   if (idx !== -1) world.blocks.splice(idx, 1);
+}
+
+function damageBoss(
+  world: WorldState,
+  boss: FortressBoss,
+  amount: number,
+  text: string,
+  events: GameEvent[]
+): void {
+  if (boss.defeated) return;
+  boss.hp -= amount;
+  boss.hurtFlashTimer = 20;
+  events.push({ type: 'sfx', id: 'boss_hit' });
+  events.push({ type: 'haptic', kind: 'medium' });
+  spawnSparks(world, boss.x + boss.width / 2, boss.y + boss.height / 2, '#fb923c', 8);
+  if (text) {
+    spawnText(world, boss.x, boss.y - 14, text, '#fb923c');
+  }
+  if (boss.hp <= 0) {
+    boss.defeated = true;
+    boss.phase = 'idle';
+    world.bossFires = [];
+    addScore(world, 10000);
+    spawnText(world, boss.x - 16, boss.y - 20, '¡JEFE DERROTADO! ¡COGE EL HACHA!', '#4ade80');
+    events.push({ type: 'sfx', id: 'one_up' });
+    events.push({ type: 'haptic', kind: 'success' });
+  }
 }
 
 function triggerBlockHit(
@@ -293,6 +345,12 @@ function triggerBlockHit(
     const isNowOn = world.onOffState === 'on';
     spawnText(world, block.x, block.baseY - 14, isNowOn ? 'ON' : 'OFF', isNowOn ? '#ef4444' : '#3b82f6');
     spawnSparks(world, block.x + 16, block.baseY + 16, isNowOn ? '#ef4444' : '#3b82f6', 8);
+
+    if (world.boss && !world.boss.defeated && (world.boss.puzzleKind ?? 'on_off_trap') === 'pillar_stomp') {
+      world.boss.phase = 'stunned';
+      world.boss.phaseTimer = 115;
+      damageBoss(world, world.boss, 2, '¡ATURDIDO POR INTERRUPTOR!', events);
+    }
     return;
   }
 
@@ -782,12 +840,12 @@ export function stepWorld(
         world.screenShake = 6;
         events.push({ type: 'sfx', id: 'break_block' });
         events.push({ type: 'haptic', kind: 'rigid' });
-      } else if (boss.bridgeCols.length === 0 && !boss.defeated) {
+      } else if (boss.bridgeCols.length === 0) {
         boss.fallingInLava = true;
         boss.vy += 0.55;
         boss.y += boss.vy;
         const bottomLimit = ((world.worldRows ?? WORLD_ROWS) * TILE) + 24;
-        if (boss.y > bottomLimit) {
+        if (boss.y > bottomLimit && !boss.defeated) {
           boss.defeated = true;
           addScore(world, 10000);
           spawnText(world, world.player.x - 16, world.player.y - 24, '+10000 ¡REY CAÍDO!', '#4ade80');
@@ -1053,6 +1111,18 @@ export function stepWorld(
         knockEnemy(world, en, 0, events);
       }
     }
+    if (world.boss && !world.boss.defeated && overlaps(capeRect, world.boss)) {
+      const boss = world.boss;
+      if (boss.hurtFlashTimer <= 0) {
+        if (boss.phase === 'shell_spin') {
+          damageBoss(world, boss, 2, '¡ESCUDO ROTO -2!', events);
+          boss.phase = 'stunned';
+          boss.phaseTimer = 110;
+        } else {
+          damageBoss(world, boss, 2, '¡GOLPE DE CAPA -2!', events);
+        }
+      }
+    }
     if (p.capeSpinTimer === 14) {
       const sideCols = [
         Math.floor((p.x - 14) / TILE),
@@ -1257,6 +1327,7 @@ export function stepWorld(
   const horizSolids = collectNearbySolids(world, p, false);
   let wallTouch: -1 | 0 | 1 = 0;
   for (const s of horizSolids) {
+    if (isPassableAscentLedge(world, s)) continue;
     if (overlaps(p, s)) {
       if (!s.platform && p.vx !== 0) wallTouch = p.vx > 0 ? 1 : -1;
       if (p.vx > 0) {
@@ -1395,8 +1466,12 @@ export function stepWorld(
     }
   }
 
+  if (p.onGround || p.vy * gDir >= 0) {
+    p.springJumping = false;
+  }
+
   const jumpMovingAway = gDir === 1 ? p.vy < -4.2 : p.vy > 4.2;
-  if (!input.jump && jumpMovingAway && !p.capeFlying) {
+  if (!input.jump && jumpMovingAway && !p.capeFlying && !p.springJumping) {
     p.vy *= 0.62;
   }
 
@@ -1449,9 +1524,10 @@ export function stepWorld(
     if (!overlaps(p, s)) continue;
 
     if (gDir === 1) {
-      if (p.vy > 0) {
+      if (p.vy >= 0) {
         if (s.block?.type === 'hidden') continue;
         if (s.platform && prevY + p.height > s.y + 10) continue;
+        if (isPassableAscentLedge(world, s) && prevY + p.height > s.y + 14) continue;
 
         // Spin-jumping onto Rotating or Brick blocks as Super/Cape shatters them from above!
         if (
@@ -1471,6 +1547,7 @@ export function stepWorld(
         p.onGround = true;
       } else if (p.vy < 0) {
         if (s.platform) continue;
+        if (isPassableAscentLedge(world, s)) continue;
         if (s.block?.type === 'hidden' && prevY < s.y + s.height - 8) continue;
 
         if (s.block && s.block.type !== 'hidden') {
@@ -1639,6 +1716,7 @@ export function stepWorld(
       p.y = sp.y - p.height;
       p.vy =
         sp.kind === 'mushroom' ? (input.jump ? -16.6 : -13.6) : input.jump ? -15.4 : -12.2;
+      p.springJumping = true;
       p.onGround = false;
       p.stompCombo = 0;
       events.push({ type: 'sfx', id: 'spring' });
@@ -1939,18 +2017,24 @@ export function stepWorld(
 
     if (!explode && world.boss && !world.boss.defeated && overlaps(fb, world.boss)) {
       explode = true;
-      world.boss.hp -= fb.fromYoshi ? 2 : 1;
-      world.boss.hurtFlashTimer = 10;
-      events.push({ type: 'sfx', id: 'boss_hit' });
-      events.push({ type: 'haptic', kind: 'medium' });
-      spawnSparks(world, fb.x, fb.y, '#fb923c', 6);
-      if (world.boss.hp <= 0) {
-        world.boss.defeated = true;
-        addScore(world, 10000);
-        spawnText(world, world.boss.x, world.boss.y - 12, '+10000 ¡REY DERROTADO!', '#4ade80');
-        spawnSparks(world, world.boss.x + 28, world.boss.y + 28, '#fde047', 12);
-        events.push({ type: 'sfx', id: 'boss_roar' });
-        events.push({ type: 'haptic', kind: 'heavy' });
+      const boss = world.boss;
+      if (boss.phase === 'shell_spin') {
+        if (fb.fromYoshi) {
+          if (boss.hurtFlashTimer <= 0) {
+            damageBoss(world, boss, 2, '¡ESCUDO ROTO -2!', events);
+            boss.phase = 'stunned';
+            boss.phaseTimer = 110;
+          }
+        } else {
+          events.push({ type: 'sfx', id: 'bump' });
+          spawnSparks(world, fb.x, fb.y, '#94a3b8', 4);
+          spawnText(world, boss.x, boss.y - 12, '¡ESCUDO ACTIVO!', '#94a3b8');
+        }
+      } else {
+        if (boss.hurtFlashTimer <= 0) {
+          const dmg = fb.fromYoshi ? 2 : 1;
+          damageBoss(world, boss, dmg, fb.fromYoshi ? '¡FUEGO YOSHI -2!' : '¡FUEGO -1!', events);
+        }
       }
     }
 
@@ -1974,16 +2058,15 @@ export function stepWorld(
     hitBlock: (b) => triggerBlockHit(world, b, true, events),
     hitBoss: () => {
       const boss = world.boss;
-      if (!boss) return;
-      boss.hp -= 1;
-      boss.hurtFlashTimer = 10;
-      events.push({ type: 'sfx', id: 'boss_hit' });
-      events.push({ type: 'haptic', kind: 'medium' });
-      if (boss.hp <= 0) {
-        boss.defeated = true;
-        addScore(world, 10000);
-        spawnText(world, boss.x, boss.y - 12, '+10000 ¡REY DERROTADO!', '#4ade80');
-        events.push({ type: 'sfx', id: 'boss_roar' });
+      if (!boss || boss.defeated) return;
+      if (boss.hurtFlashTimer <= 0) {
+        if (boss.phase === 'shell_spin') {
+          damageBoss(world, boss, 2, '¡ESCUDO ROTO -2!', events);
+          boss.phase = 'stunned';
+          boss.phaseTimer = 110;
+        } else {
+          damageBoss(world, boss, 2, '¡LLAVE INGLESA -2!', events);
+        }
       }
     },
     sparks: (x, y, color, count) => spawnSparks(world, x, y, color, count),
@@ -1997,7 +2080,12 @@ export function stepWorld(
     const en = world.enemies[i];
 
     if (!en.active) {
-      if (en.x <= world.cameraX + viewportWorldWidth + 112) {
+      const camY = world.cameraY ?? 0;
+      const inHorizView = en.x <= world.cameraX + viewportWorldWidth + 112;
+      const inVertView =
+        (world.worldRows ?? WORLD_ROWS) <= WORLD_ROWS ||
+        (en.y + en.height >= camY - 96 && en.y <= camY + LOGICAL_HEIGHT + 96);
+      if (inHorizView && inVertView) {
         en.active = true;
       } else {
         continue;
@@ -2114,11 +2202,41 @@ export function stepWorld(
     const isShellSlide = en.state === 'shell_slide';
     en.vy = Math.min(en.vy + (en.type === 'paratroopa' ? 0.3 : 0.46), 10.5);
 
-    if (en.type === 'koopa_red' && en.state === 'walk' && en.onGround) {
+    const isGroundEnemy =
+      en.type === 'koopa_red' ||
+      (world.partition === 'tower' &&
+        (en.type === 'galoomba' ||
+          en.type === 'spiny' ||
+          en.type === 'koopa_green' ||
+          en.type === 'rex' ||
+          en.type === 'chuck'));
+
+    if (isGroundEnemy && en.state === 'walk' && en.onGround) {
       const probeX = en.vx > 0 ? en.x + en.width + 2 : en.x - 4;
       const probeCol = Math.floor(probeX / TILE);
       const footRow = Math.floor((en.y + en.height + 4) / TILE);
-      if (!world.blockGrid.has(gridKey(probeCol, footRow))) {
+      const b = world.blockGrid.get(gridKey(probeCol, footRow));
+      const onOff = world.onOffState ?? 'on';
+      const hasBlock =
+        Boolean(b) &&
+        b!.type !== 'hidden' &&
+        (b!.type !== 'on_block' || onOff === 'on') &&
+        (b!.type !== 'off_block' || onOff === 'off');
+      const hasPipe = world.pipes.some(
+        (pipe) =>
+          probeX >= pipe.x &&
+          probeX <= pipe.x + pipe.width &&
+          en.y + en.height >= pipe.y - 12 &&
+          en.y + en.height <= pipe.y + 12
+      );
+      const hasPlatform = world.platforms.some(
+        (pl) =>
+          probeX >= pl.x &&
+          probeX <= pl.x + pl.width &&
+          en.y + en.height >= pl.y - 12 &&
+          en.y + en.height <= pl.y + 12
+      );
+      if (!hasBlock && !hasPipe && !hasPlatform) {
         en.vx *= -1;
       }
     }
@@ -2158,7 +2276,7 @@ export function stepWorld(
       }
     }
 
-    // Sliding Koopa Shell mows down other enemies
+    // Sliding Koopa Shell mows down other enemies & bosses
     if (isShellSlide) {
       for (const other of world.enemies) {
         if (
@@ -2170,6 +2288,20 @@ export function stepWorld(
         ) {
           knockEnemy(world, other, en.shellCombo, events);
           en.shellCombo += 1;
+        }
+      }
+
+      if (world.boss && !world.boss.defeated && overlaps(en, world.boss)) {
+        const boss = world.boss;
+        if (boss.hurtFlashTimer <= 0) {
+          if (boss.phase === 'shell_spin') {
+            damageBoss(world, boss, 2, '¡ESCUDO ROTO -2!', events);
+            boss.phase = 'stunned';
+            boss.phaseTimer = 110;
+          } else {
+            damageBoss(world, boss, 3, '¡GOLPE DE CAPARAZÓN -3!', events);
+          }
+          knockEnemy(world, en, 0, events);
         }
       }
     }
@@ -2267,41 +2399,205 @@ export function stepWorld(
   // =========================================================================
   if (world.boss) {
     const boss = world.boss;
+    const puzzleKind = boss.puzzleKind ?? 'on_off_trap';
     const axeRect: Rect = { x: boss.axeX, y: boss.axeY, width: TILE, height: TILE };
+    const arenaWaveActive = Boolean(
+      world.arenaWave &&
+        world.arenaWave.current <= world.arenaWave.total &&
+        (world.arenaWave.remaining > 0 ||
+          world.enemies.some((en) => en.state !== 'squashed' && en.state !== 'knocked'))
+    );
 
-    if (!boss.axeGrabbed && overlaps(p, axeRect)) {
+    // 1. Sello del Hacha Dorada: solo coger cuando boss.defeated
+    if (boss.defeated && !boss.axeGrabbed && overlaps(p, axeRect) && !isGoalLocked(world) && !arenaWaveActive) {
       boss.axeGrabbed = true;
       p.vx = 0;
       p.vy = 0;
       world.bossFires = [];
       world.status = 'boss_collapse';
-      world.statusTimer = boss.defeated ? 90 : 165;
+      world.statusTimer = 90;
       events.push({ type: 'bgm', track: null });
       events.push({ type: 'sfx', id: 'bridge_collapse' });
       events.push({ type: 'haptic', kind: 'heavy' });
-      if (boss.defeated) {
-        events.push({ type: 'sfx', id: 'stage_clear' });
-      }
+      events.push({ type: 'sfx', id: 'stage_clear' });
       return events;
+    }
+
+    if (!boss.defeated && overlaps(p, axeRect)) {
+      p.x = boss.axeX - p.width - 4;
+      p.vx = -3.6;
+      boss.sealedMessageTimer = (boss.sealedMessageTimer ?? 0) - 1;
+      if (boss.sealedMessageTimer <= 0) {
+        boss.sealedMessageTimer = 60;
+        const hint =
+          puzzleKind === 'shell_ricochet'
+            ? '¡ROMPE SU GIRO CON CAPARAZÓN/ARMA!'
+            : puzzleKind === 'pillar_stomp'
+            ? '¡SALTA LA ONDA Y PÍSALO ATURDIDO!'
+            : puzzleKind === 'crown_mirror'
+            ? '¡USA ON/OFF Y CAPARAZÓN CONTRA SU ESCUDO!'
+            : '¡ACTIVA ON/OFF SOBRE EL PUENTE!';
+        spawnText(world, boss.axeX - 40, p.y - 24, hint, '#ef4444');
+        events.push({ type: 'sfx', id: 'goal_locked' });
+        events.push({ type: 'haptic', kind: 'warning' });
+      }
     }
 
     if (!boss.defeated && boss.x <= world.cameraX + viewportWorldWidth + 120) {
       if (boss.hurtFlashTimer > 0) boss.hurtFlashTimer -= 1;
       if (boss.roarTimer > 0) boss.roarTimer -= 1;
-
-      boss.facing = p.x < boss.x ? -1 : 1;
-
-      if (boss.x < boss.homeX - 3.5 * TILE) boss.vx = 1.15;
-      if (boss.x > boss.homeX + 2.5 * TILE) boss.vx = -1.15;
-      boss.x += boss.vx;
-
-      boss.jumpTimer -= 1;
-      if (boss.jumpTimer <= 0 && boss.onGround) {
-        boss.vy = -9.6;
-        boss.onGround = false;
-        boss.jumpTimer = 85;
+      if (boss.sealedMessageTimer && boss.sealedMessageTimer > 0 && !overlaps(p, axeRect)) {
+        boss.sealedMessageTimer -= 1;
       }
 
+      boss.phase = boss.phase ?? 'idle';
+      boss.phaseTimer = boss.phaseTimer ?? 120;
+
+      // Spawn de Koopas de apoyo ('shell_ricochet' o 'crown_mirror')
+      if (puzzleKind === 'shell_ricochet' || puzzleKind === 'crown_mirror') {
+        boss.shellSpawnTimer = (boss.shellSpawnTimer ?? 190) - 1;
+        if (boss.shellSpawnTimer <= 0) {
+          boss.shellSpawnTimer = 190;
+          const activeKoopas = world.enemies.filter(
+            (en) =>
+              (en.type === 'koopa_green' || en.type === 'koopa_red') &&
+              en.state !== 'squashed' &&
+              en.state !== 'knocked' &&
+              Math.abs(en.x - boss.homeX) < 16 * TILE
+          ).length;
+          if (activeKoopas < 2) {
+            const spawnCol =
+              boss.bridgeCols.length > 1
+                ? boss.bridgeCols[1]
+                : (boss.bridgeCols[0] ?? Math.floor(boss.homeX / TILE) - 6);
+            const spawnX = spawnCol * TILE + 3;
+            const walkDir = boss.homeX >= spawnX ? 1 : -1;
+            world.enemies.push({
+              id: world.nextEntityId++,
+              type: 'koopa_green',
+              state: 'walk',
+              x: spawnX,
+              y: 8.5 * TILE,
+              baseY: 8.5 * TILE,
+              vx: walkDir * 1.1,
+              vy: 0,
+              width: 26,
+              height: 38,
+              facing: walkDir as 1 | -1,
+              onGround: false,
+              hp: 1,
+              stateTimer: 0,
+              kickGraceTimer: 0,
+              shellCombo: 0,
+              animTimer: 0,
+              active: true,
+            });
+          }
+        }
+      }
+
+      // Trampa ON/OFF en el puente ('on_off_trap' o 'crown_mirror')
+      if (
+        (puzzleKind === 'on_off_trap' || puzzleKind === 'crown_mirror') &&
+        (world.onOffState ?? 'on') === 'off'
+      ) {
+        const minCol = boss.bridgeCols.length > 0 ? Math.min(...boss.bridgeCols) : Math.floor(boss.homeX / TILE) - 8;
+        const maxCol = boss.bridgeCols.length > 0 ? Math.max(...boss.bridgeCols) : Math.floor(boss.homeX / TILE) + 4;
+        const overBridge = boss.x + boss.width > minCol * TILE - 16 && boss.x < (maxCol + 1) * TILE + 16;
+        if (overBridge && boss.y >= 10.35 * TILE) {
+          damageBoss(world, boss, 3, '¡TRAMPA DE MAGMA -3!', events);
+          boss.vy = -10.8;
+          boss.phase = 'stunned';
+          boss.phaseTimer = 115;
+          world.onOffState = 'on';
+          events.push({ type: 'sfx', id: 'switch_toggle' });
+        }
+      }
+
+      // Ciclo 'idle' <-> 'shell_spin' <-> 'stunned'
+      if (boss.phase === 'stunned') {
+        boss.vx = 0;
+        boss.phaseTimer -= 1;
+        if (boss.phaseTimer <= 0) {
+          boss.phase = 'idle';
+          boss.phaseTimer = 120;
+        }
+      } else if (boss.phase === 'shell_spin') {
+        boss.phaseTimer -= 1;
+        boss.vx = boss.facing * 2.8;
+        boss.x += boss.vx;
+        if (boss.x < boss.homeX - 4 * TILE) {
+          boss.x = boss.homeX - 4 * TILE;
+          boss.facing = 1;
+          boss.vx = 2.8;
+        } else if (boss.x > boss.homeX + 3 * TILE) {
+          boss.x = boss.homeX + 3 * TILE;
+          boss.facing = -1;
+          boss.vx = -2.8;
+        }
+        if (boss.phaseTimer <= 0) {
+          boss.phase = 'idle';
+          boss.phaseTimer = 120;
+          boss.vx = boss.facing * 1.15;
+        }
+      } else {
+        // 'idle'
+        boss.facing = p.x < boss.x ? -1 : 1;
+
+        if (boss.x < boss.homeX - 3.5 * TILE) boss.vx = 1.15;
+        if (boss.x > boss.homeX + 2.5 * TILE) boss.vx = -1.15;
+        boss.x += boss.vx;
+
+        boss.jumpTimer -= 1;
+        if (boss.jumpTimer <= 0 && boss.onGround) {
+          if (puzzleKind === 'pillar_stomp') {
+            boss.vy = -11.0;
+            boss.jumpTimer = 110;
+          } else {
+            boss.vy = -9.6;
+            boss.jumpTimer = 85;
+          }
+          boss.onGround = false;
+        }
+
+        boss.fireTimer -= 1;
+        if (boss.fireTimer <= 0) {
+          boss.roarTimer = 28;
+          const worldNum = Math.floor(world.levelIndex / 4) + 1;
+          boss.fireTimer = Math.max(58, 118 - worldNum * 9);
+          const lanes = [9 * TILE + 6, 8 * TILE + 4, 6.5 * TILE];
+          const targetY = lanes[world.frameCount % lanes.length];
+          world.bossFires.push({
+            x: boss.facing === -1 ? boss.x - 24 : boss.x + boss.width,
+            y: boss.y + 18,
+            targetY,
+            vx: boss.facing * (3.6 + worldNum * 0.25),
+            width: 36,
+            height: 16,
+            animTimer: 0,
+          });
+          events.push({ type: 'sfx', id: 'boss_roar' });
+        }
+
+        boss.phaseTimer -= 1;
+        if (boss.phaseTimer <= 0) {
+          const canShellSpin =
+            puzzleKind === 'shell_ricochet' ||
+            (puzzleKind === 'crown_mirror' && boss.hp <= boss.maxHp * 0.6);
+          if (canShellSpin) {
+            boss.phase = 'shell_spin';
+            boss.phaseTimer = 130;
+            boss.facing = p.x < boss.x ? -1 : 1;
+            boss.vx = boss.facing * 2.8;
+            events.push({ type: 'sfx', id: 'kick' });
+          } else {
+            boss.phaseTimer = 120;
+          }
+        }
+      }
+
+      // Vertical movement & landing
+      const prevBossVy = boss.vy;
       boss.vy = Math.min(boss.vy + 0.34, 8.5);
       boss.y += boss.vy;
       boss.onGround = false;
@@ -2311,36 +2607,59 @@ export function stepWorld(
           boss.y = s.y - boss.height;
           boss.vy = 0;
           boss.onGround = true;
+
+          // Pillar stomp landing trigger
+          if (puzzleKind === 'pillar_stomp' && prevBossVy >= 5.5 && boss.phase !== 'stunned') {
+            world.bossFires.push({
+              x: boss.x - 24,
+              y: boss.y + boss.height - 14,
+              targetY: boss.y + boss.height - 14,
+              vx: -4.2,
+              width: 36,
+              height: 16,
+              animTimer: 0,
+            });
+            world.bossFires.push({
+              x: boss.x + boss.width,
+              y: boss.y + boss.height - 14,
+              targetY: boss.y + boss.height - 14,
+              vx: 4.2,
+              width: 36,
+              height: 16,
+              animTimer: 0,
+            });
+            boss.phase = 'stunned';
+            boss.phaseTimer = 70;
+            world.screenShake = 10;
+            events.push({ type: 'sfx', id: 'bump' });
+            events.push({ type: 'haptic', kind: 'heavy' });
+          }
         }
       }
 
-      boss.fireTimer -= 1;
-      if (boss.fireTimer <= 0) {
-        boss.roarTimer = 28;
-        const worldNum = Math.floor(world.levelIndex / 4) + 1;
-        boss.fireTimer = Math.max(58, 118 - worldNum * 9);
-        const lanes = [9 * TILE + 6, 8 * TILE + 4, 6.5 * TILE];
-        const targetY = lanes[world.frameCount % lanes.length];
-        world.bossFires.push({
-          x: boss.facing === -1 ? boss.x - 24 : boss.x + boss.width,
-          y: boss.y + 18,
-          targetY,
-          vx: boss.facing * (3.6 + worldNum * 0.25),
-          width: 36,
-          height: 16,
-          animTimer: 0,
-        });
-        events.push({ type: 'sfx', id: 'boss_roar' });
-      }
-
+      // Pisotón seguro desde arriba (overlaps(p, boss)) y Daño
       if (overlaps(p, boss)) {
         if (p.starTimer > 0) {
-          boss.hp -= 1;
-          boss.hurtFlashTimer = 10;
-          if (boss.hp <= 0) {
-            boss.defeated = true;
-            addScore(world, 10000);
-            spawnText(world, boss.x, boss.y - 12, '+10000', '#4ade80');
+          if (boss.hurtFlashTimer <= 0) {
+            damageBoss(world, boss, 2, '¡INVENCIBLE -2!', events);
+          }
+        } else if (prevY + p.height <= boss.y + 24 && p.vy > 0) {
+          // ¡NUNCA dañes a Plomero! Rebótalo arriba
+          p.vy = -10.6;
+          const canStompDamage =
+            boss.phase === 'stunned' ||
+            (boss.phase === 'idle' && (puzzleKind === 'pillar_stomp' || puzzleKind === 'crown_mirror'));
+
+          if (canStompDamage) {
+            if (boss.hurtFlashTimer <= 0) {
+              const dmg = boss.phase === 'stunned' ? 3 : 2;
+              damageBoss(world, boss, dmg, '¡GOLPE CRÍTICO!', events);
+            }
+          } else {
+            // En shell_spin o acorazado ('on_off_trap'/'shell_ricochet' 'idle')
+            events.push({ type: 'sfx', id: 'bump' });
+            events.push({ type: 'haptic', kind: 'light' });
+            spawnText(world, boss.x, boss.y - 12, '¡USA EL ACERTIJO!', '#fbbf24');
           }
         } else {
           damagePlayer(world, events);
@@ -2404,16 +2723,16 @@ export function stepWorld(
       spawnText(world, 13 * TILE - 40, 4 * TILE, `¡OLEADA ${wave.current}/${wave.total}!`, '#fde047');
 
       if (wave.current === 2) {
-        spawnArenaEnemy(world, 'galoomba', 2, 1);
-        spawnArenaEnemy(world, 'koopa_red', 2, 1);
-        spawnArenaEnemy(world, 'galoomba', 23, -1);
-        spawnArenaEnemy(world, 'koopa_red', 23, -1);
+        spawnArenaEnemy(world, 'galoomba', 4, 1);
+        spawnArenaEnemy(world, 'koopa_red', 4, 1);
+        spawnArenaEnemy(world, 'galoomba', 21, -1);
+        spawnArenaEnemy(world, 'koopa_red', 21, -1);
         wave.remaining = 4;
       } else if (wave.current === 3) {
-        spawnArenaEnemy(world, 'rex', 2, 1);
-        spawnArenaEnemy(world, 'paratroopa', 2, 1);
-        spawnArenaEnemy(world, 'rex', 23, -1);
-        spawnArenaEnemy(world, 'chuck', 23, -1);
+        spawnArenaEnemy(world, 'rex', 4, 1);
+        spawnArenaEnemy(world, 'paratroopa', 4, 1);
+        spawnArenaEnemy(world, 'rex', 21, -1);
+        spawnArenaEnemy(world, 'chuck', 21, -1);
         wave.remaining = 4;
       }
     } else if (activeEnemiesCount <= 0 && wave.current >= wave.total) {
@@ -2430,12 +2749,9 @@ export function stepWorld(
   );
 
   if (arenaWaveActive && world.flagpole) {
-    const goalX = world.flagpole.x;
-    if (p.x + p.width >= goalX - 2) {
-      p.x = goalX - p.width - 6;
-      p.vx = -3.5;
+    if (overlaps(p, world.flagpole)) {
       if (!world.goalBlockedTimer) {
-        spawnText(world, goalX - 60, p.y - 24, '¡VENCE LAS 3 OLEADAS!', '#ef4444');
+        spawnText(world, world.flagpole.x - 60, p.y - 24, '¡VENCE LAS 3 OLEADAS!', '#ef4444');
         events.push({ type: 'sfx', id: 'goal_locked' });
         events.push({ type: 'haptic', kind: 'warning' });
         world.goalBlockedTimer = 60;
@@ -2448,7 +2764,7 @@ export function stepWorld(
 
   // Classic Flagpole Goal check
   if (world.flagpole && overlaps(p, world.flagpole)) {
-    if (!arenaWaveActive) {
+    if (!arenaWaveActive && !isGoalLocked(world)) {
       startFlagpoleSequence(world, events);
     }
   }
@@ -2509,8 +2825,7 @@ function spawnArenaEnemy(world: WorldState, type: EnemyType, col: number, facing
   const height = type === 'chuck' ? 42 : isTall ? 38 : 28;
   const width = type === 'chuck' ? 32 : 26;
   const speed = type === 'chuck' ? 1.85 : type === 'rex' ? 1.4 : 1.2;
-  const pipe = world.pipes.find((p) => Math.abs(p.x - col * TILE) < 16);
-  const spawnY = pipe ? pipe.y - height : (GROUND_ROW - 1) * TILE - height;
+  const spawnY = GROUND_ROW * TILE - height;
   world.enemies.push({
     id: world.nextEntityId++,
     type,

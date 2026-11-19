@@ -198,7 +198,7 @@ export class SkiaWorldRenderer {
     }
 
     // 12. Fortress Boss (Rey Koopa), Golden Axe & Boss Fire Waves
-    this.drawBossAndAxe(canvas, atlas, world);
+    this.drawBossAndAxe(canvas, atlas, world, pixelFont);
 
     // 13. Hero Plomero (including Riding Yoshi + Extending Tongue + Golden SMW Cape!)
     if (!world.player.enteringCastle) {
@@ -1732,13 +1732,88 @@ export class SkiaWorldRenderer {
     }
   }
 
-  private drawBossAndAxe(canvas: SkCanvas, atlas: SkiaSpriteAtlas, world: WorldState): void {
+  private drawBossAndAxe(
+    canvas: SkCanvas,
+    atlas: SkiaSpriteAtlas,
+    world: WorldState,
+    pixelFont?: SkFont | null
+  ): void {
     const boss = world.boss;
     if (!boss) return;
 
     if (!boss.axeGrabbed) {
       const pulse = Math.sin(world.frameCount * 0.2) * 2;
       this.blitSprite(canvas, atlas, 'axe_1', boss.axeX, boss.axeY + pulse, TILE, TILE, false);
+
+      // Sello / Escudo Mágico carmesí y dorado cuando el jefe aún no ha sido vencido
+      if (!boss.defeated) {
+        const axeCenterX = boss.axeX + TILE / 2;
+        const axeCenterY = boss.axeY + TILE / 2 + pulse;
+        const haloR = 24 + Math.sin(world.frameCount * 0.15) * 3.5;
+
+        // Halo pulsante exterior carmesí
+        this.fillPaint.setColor(Skia.Color('rgba(220, 38, 38, 0.32)'));
+        canvas.drawCircle(axeCenterX, axeCenterY, haloR, this.fillPaint);
+
+        // Halo interior carmesí
+        this.fillPaint.setColor(Skia.Color('rgba(153, 27, 27, 0.22)'));
+        canvas.drawCircle(axeCenterX, axeCenterY, haloR - 5, this.fillPaint);
+
+        // Anillo exterior dorado
+        this.strokePaint.setColor(Skia.Color('#facc15'));
+        this.strokePaint.setStrokeWidth(2.5);
+        canvas.drawCircle(axeCenterX, axeCenterY, haloR, this.strokePaint);
+
+        // Anillo interior carmesí
+        this.strokePaint.setColor(Skia.Color('#ef4444'));
+        this.strokePaint.setStrokeWidth(1.5);
+        canvas.drawCircle(axeCenterX, axeCenterY, haloR - 4, this.strokePaint);
+
+        // 4 Runas mágicas orbitando sobre el perímetro
+        for (let i = 0; i < 4; i++) {
+          const ra = world.frameCount * 0.08 + (i * Math.PI) / 2;
+          const rx = axeCenterX + Math.cos(ra) * haloR;
+          const ry = axeCenterY + Math.sin(ra) * haloR;
+          this.fillPaint.setColor(Skia.Color(i % 2 === 0 ? '#fde047' : '#ef4444'));
+          canvas.drawCircle(rx, ry, 2.5, this.fillPaint);
+        }
+
+        // X rúnica diagonal traslúcida dorada y carmesí
+        canvas.save();
+        canvas.translate(axeCenterX, axeCenterY);
+        canvas.rotate(45, 0, 0);
+        this.fillPaint.setColor(Skia.Color('rgba(239, 68, 68, 0.45)'));
+        canvas.drawRect(Skia.XYWHRect(-18, -2, 36, 4), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(-2, -18, 4, 36), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('rgba(250, 204, 21, 0.7)'));
+        canvas.drawRect(Skia.XYWHRect(-16, -1, 32, 2), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(-1, -16, 2, 32), this.fillPaint);
+        canvas.restore();
+
+        // Candado mágico dorado central al frente del hacha
+        const lockY = axeCenterY + 4;
+        // Grillete del candado
+        this.fillPaint.setColor(Skia.Color('#450a0a'));
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 6, lockY - 11, 12, 8), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('rgba(220, 38, 38, 0.4)'));
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 3, lockY - 9, 6, 6), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#facc15'));
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 5, lockY - 10, 10, 2), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 5, lockY - 10, 2, 7), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(axeCenterX + 3, lockY - 10, 2, 7), this.fillPaint);
+
+        // Cuerpo del candado
+        this.fillPaint.setColor(Skia.Color('#1c1917'));
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 9, lockY - 4, 18, 14), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#b91c1c'));
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 8, lockY - 3, 16, 12), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#facc15'));
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 6, lockY - 1, 12, 8), this.fillPaint);
+        // Ojo de la cerradura
+        this.fillPaint.setColor(Skia.Color('#1c1917'));
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 2, lockY + 1, 4, 3), this.fillPaint);
+        canvas.drawRect(Skia.XYWHRect(axeCenterX - 1, lockY + 4, 2, 2), this.fillPaint);
+      }
     }
 
     if (!boss.defeated || boss.fallingInLava) {
@@ -1755,6 +1830,98 @@ export class SkiaWorldRenderer {
         false,
         boss.hurtFlashTimer > 0
       );
+
+      // Efectos visuales de fase del jefe (SMW Boss Puzzle)
+      if (!boss.defeated) {
+        const bx = boss.x + boss.width / 2;
+        const by = boss.y + boss.height / 2;
+
+        if (boss.phase === 'shell_spin') {
+          // Aura / escudo giratorio violeta-dorado alrededor del jefe (y chispas de blindaje)
+          const spinPulse = Math.sin(world.frameCount * 0.25) * 3;
+          this.fillPaint.setColor(Skia.Color('rgba(147, 51, 234, 0.28)'));
+          canvas.drawCircle(bx, by, 36 + spinPulse, this.fillPaint);
+
+          // Anillos concéntricos giratorios
+          this.strokePaint.setColor(Skia.Color('#a855f7'));
+          this.strokePaint.setStrokeWidth(3);
+          canvas.drawCircle(bx, by, 34, this.strokePaint);
+
+          this.strokePaint.setColor(Skia.Color('#facc15'));
+          this.strokePaint.setStrokeWidth(2);
+          canvas.drawCircle(bx, by, 29, this.strokePaint);
+
+          // Nodos de energía violeta-dorado girando
+          const spinAngle = world.frameCount * 0.16;
+          for (let i = 0; i < 6; i++) {
+            const a = spinAngle + (i * Math.PI) / 3;
+            const ox = bx + Math.cos(a) * 33;
+            const oy = by + Math.sin(a) * 28;
+            this.fillPaint.setColor(Skia.Color(i % 2 === 0 ? '#fde047' : '#c084fc'));
+            canvas.drawCircle(ox, oy, 3.5, this.fillPaint);
+          }
+
+          // Chispas de blindaje deflectoras
+          for (let s = 0; s < 5; s++) {
+            const sparkAngle = ((world.frameCount * 11 + s * 72) % 360) * (Math.PI / 180);
+            const sparkDist = 34 + ((world.frameCount * 3 + s * 9) % 12);
+            const sx = bx + Math.cos(sparkAngle) * sparkDist;
+            const sy = by + Math.sin(sparkAngle) * sparkDist;
+            this.fillPaint.setColor(Skia.Color(s % 2 === 0 ? '#ffffff' : '#fde047'));
+            canvas.drawRect(Skia.XYWHRect(sx - 2, sy - 2, 4, 4), this.fillPaint);
+          }
+        } else if (boss.phase === 'stunned') {
+          // 3 estrellas amarillas orbitando encima de la cabeza del jefe ('ATURDIDO')
+          const headX = bx;
+          const headY = boss.y - 10;
+          const starOrbitRx = 22;
+          const starOrbitRy = 8;
+          const baseAngle = world.frameCount * 0.12;
+
+          for (let k = 0; k < 3; k++) {
+            const a = baseAngle + (k * 2 * Math.PI) / 3;
+            const sx = headX + Math.cos(a) * starOrbitRx;
+            const sy = headY + Math.sin(a) * starOrbitRy;
+
+            // Halo amarillo suave
+            this.fillPaint.setColor(Skia.Color('rgba(253, 224, 71, 0.45)'));
+            canvas.drawCircle(sx, sy, 5, this.fillPaint);
+
+            // Estrella diamantada amarilla
+            this.fillPaint.setColor(Skia.Color('#facc15'));
+            canvas.drawRect(Skia.XYWHRect(sx - 1.5, sy - 4.5, 3, 9), this.fillPaint);
+            canvas.drawRect(Skia.XYWHRect(sx - 4.5, sy - 1.5, 9, 3), this.fillPaint);
+
+            // Núcleo blanco brillante
+            this.fillPaint.setColor(Skia.Color('#ffffff'));
+            canvas.drawRect(Skia.XYWHRect(sx - 1, sy - 1, 2, 2), this.fillPaint);
+          }
+
+          // Cartel 'ATURDIDO' para marcar claramente la ventana de vulnerabilidad
+          const badgeW = 62;
+          const badgeH = 15;
+          const badgeX = headX - badgeW / 2;
+          const badgeY = headY - 18;
+
+          this.fillPaint.setColor(Skia.Color('rgba(15, 23, 42, 0.88)'));
+          canvas.drawRect(Skia.XYWHRect(badgeX, badgeY, badgeW, badgeH), this.fillPaint);
+          this.strokePaint.setColor(Skia.Color('#facc15'));
+          this.strokePaint.setStrokeWidth(1.5);
+          canvas.drawRect(Skia.XYWHRect(badgeX, badgeY, badgeW, badgeH), this.strokePaint);
+
+          if (pixelFont) {
+            this.fillPaint.setColor(Skia.Color('#000000'));
+            canvas.drawText('ATURDIDO', badgeX + 6, badgeY + 11, this.fillPaint, pixelFont);
+            this.fillPaint.setColor(Skia.Color('#fde047'));
+            canvas.drawText('ATURDIDO', badgeX + 5, badgeY + 10, this.fillPaint, pixelFont);
+          } else {
+            this.fillPaint.setColor(Skia.Color('#fde047'));
+            canvas.drawCircle(headX - 12, badgeY + 7, 3, this.fillPaint);
+            canvas.drawCircle(headX, badgeY + 7, 4, this.fillPaint);
+            canvas.drawCircle(headX + 12, badgeY + 7, 3, this.fillPaint);
+          }
+        }
+      }
     }
 
     for (const bf of world.bossFires) {

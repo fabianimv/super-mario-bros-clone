@@ -109,7 +109,7 @@ export const TitleScreen: React.FC<Props> = ({
         <View style={[styles.partitionBar, styles.partitionBarNonlinear]}>
           {NONLINEAR_PARTITIONS.map((part) => {
             const active = part === partition;
-            const isLocked = part === 'star_road' && !progress.secretUnlocked;
+            const isLocked = false;
             return (
               <Pressable
                 key={part}

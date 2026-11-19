@@ -480,8 +480,32 @@ export function updateObjectives(world: WorldState, events: GameEvent[], cb: Obj
 export function enforceGoalLock(world: WorldState, events: GameEvent[], cb: ObjectiveCallbacks): boolean {
   if (!isGoalLocked(world)) return false;
   const p = world.player;
-  const goalX = world.flagpole ? world.flagpole.x : world.goalTape ? world.goalTape.x : null;
-  if (goalX === null || p.x + p.width < goalX - 2) return false;
+  const fp = world.flagpole ?? world.goalTape;
+  if (!fp) return false;
+
+  const isNonlinear = world.partition === 'flip' || world.arenaWave != null;
+  if (isNonlinear) {
+    const fpW = 'width' in fp ? fp.width : 16;
+    const overlapsGoal =
+      p.x < fp.x + fpW &&
+      p.x + p.width > fp.x &&
+      p.y < fp.y + fp.height &&
+      p.y + p.height > fp.y;
+    if (overlapsGoal) {
+      if (!world.goalBlockedTimer) {
+        const left = (world.gemsNeeded ?? 0) - (world.gemsCollected ?? 0);
+        cb.text(fp.x - 70, p.y - 24, `¡FALTAN ${left} GEMAS!`, '#f0abfc');
+        events.push({ type: 'sfx', id: 'goal_locked' });
+        events.push({ type: 'haptic', kind: 'error' });
+        world.goalBlockedTimer = 60;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  const goalX = fp.x;
+  if (p.x + p.width < goalX - 2) return false;
   p.x = goalX - p.width - 6;
   p.vx = -3.5;
   if (!world.goalBlockedTimer) {

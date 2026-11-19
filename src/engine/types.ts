@@ -397,6 +397,8 @@ export interface BossFireWave {
   animTimer: number;
 }
 
+export type BossPuzzleKind = 'on_off_trap' | 'shell_ricochet' | 'pillar_stomp' | 'crown_mirror';
+
 export interface FortressBoss {
   x: number;
   y: number;
@@ -420,6 +422,11 @@ export interface FortressBoss {
   axeGrabbed: boolean;
   bridgeCols: number[];
   bridgeCollapseTimer: number;
+  puzzleKind?: BossPuzzleKind;
+  phase?: 'idle' | 'shell_spin' | 'stunned';
+  phaseTimer?: number;
+  sealedMessageTimer?: number;
+  shellSpawnTimer?: number;
 }
 
 export type PowerupKind = 'mushroom' | 'flower' | 'feather' | 'yoshi_egg' | 'star' | 'one_up';
@@ -602,6 +609,7 @@ export interface Player {
   lastWallDir?: -1 | 0 | 1;
   /** Frames restantes de deslizamiento por el suelo. */
   slideTimer?: number;
+  springJumping?: boolean;
 }
 
 export type WorldStatus =
@@ -661,6 +669,13 @@ export interface MainStageSnapshot {
   echo?: { x: number; y: number } | null;
   echoTrail?: Array<{ x: number; y: number }>;
   shafts?: Array<{ x: number; y: number; hinted: boolean }>;
+  risingHazardY?: number | null;
+  risingHazardSpeed?: number;
+  wrapHorizontal?: boolean;
+  gravityDir?: 1 | -1;
+  onOffState?: 'on' | 'off';
+  cameraMode?: 'side' | 'corridor3d';
+  arenaWave?: ArenaWaveState | null;
   exitX: number;
   exitY: number;
 }

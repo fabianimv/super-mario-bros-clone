@@ -1344,34 +1344,7 @@ function buildSmwFortressStage(ctx: SmwCtx): { totalCols: number; boss: Fortress
   putBlock(ctx, arenaStart + 3, 10, 'hard');
   putBlock(ctx, arenaStart + 3, 11, 'hard');
 
-  // Varied battlements based on arenaStyle
-  switch (arenaStyle) {
-    case 0: // Y-4 (Iggy): Floating rotating blocks at row 5
-      for (let k = 0; k < 5; k++) {
-        putBlock(ctx, bridgeStart + 3 + k, 5, 'rotating');
-      }
-      break;
-    case 1: // D-4 (Morton): High dual catwalk at row 6 with drop aperture
-      for (let k = 0; k < 7; k++) {
-        if (k !== 3) putBlock(ctx, bridgeStart + 2 + k, 6, 'hard');
-      }
-      putBlock(ctx, bridgeStart + 3, 3, 'question', 'feather');
-      break;
-    case 2: // V-4 (Lemmy): Stepping stone pillars along magma bridge
-      putBlock(ctx, bridgeStart + 3, 9, 'hard');
-      putBlock(ctx, bridgeStart + 6, 8, 'hard');
-      putBlock(ctx, bridgeStart + 9, 9, 'hard');
-      break;
-    case 3: // B-4 / K-4 (Ludwig / Gran Koopa): Fortified throne bastion
-      for (let k = bridgeStart + bridgeLen - 3; k <= bridgeStart + bridgeLen; k++) {
-        putBlock(ctx, k, 9, 'hard');
-      }
-      putBlock(ctx, bridgeStart + 4, 4, 'rotating');
-      putBlock(ctx, bridgeStart + 5, 4, 'rotating');
-      putBlock(ctx, bridgeStart + 8, 4, 'rotating');
-      break;
-  }
-
+  // Suspension bridge over magma
   for (let b = 0; b < bridgeLen; b++) {
     const col = bridgeStart + b;
     ctx.pits.add(col);
@@ -1384,6 +1357,55 @@ function buildSmwFortressStage(ctx: SmwCtx): { totalCols: number; boss: Fortress
   putBlock(ctx, axeCol, 10, 'hard');
   putBlock(ctx, axeCol, 11, 'hard');
 
+  // Varied battlements based on arenaStyle & SMW Koopaling puzzle mechanics
+  switch (arenaStyle) {
+    case 0: // Y-4 (Iggy): on_off_trap — central on_block bridge + on_off_switch + question feather
+      for (let c = bridgeStart + 4; c <= bridgeStart + 8; c++) {
+        putBlock(ctx, c, 10, 'on_block');
+      }
+      for (let k = 0; k < 5; k++) {
+        putBlock(ctx, bridgeStart + 3 + k, 5, 'rotating');
+      }
+      putBlock(ctx, bridgeStart + 5, 6, 'on_off_switch');
+      putBlock(ctx, bridgeStart + 6, 6, 'question', 'feather');
+      break;
+
+    case 1: // D-4 (Morton): shell_ricochet — high dual catwalk + koopa_green at entrance + question feather
+      for (let k = 0; k < 7; k++) {
+        if (k !== 3) putBlock(ctx, bridgeStart + 2 + k, 6, 'hard');
+      }
+      putBlock(ctx, bridgeStart + 3, 3, 'question', 'feather');
+      addEnemy(ctx, arenaStart + 2, 9, 'koopa_green');
+      break;
+
+    case 2: // V-4 (Lemmy): pillar_stomp — stepping pillars + on_off_switch + question feather
+      putBlock(ctx, bridgeStart + 3, 9, 'hard');
+      putBlock(ctx, bridgeStart + 3, 8, 'hard');
+      putBlock(ctx, bridgeStart + 6, 8, 'hard');
+      putBlock(ctx, bridgeStart + 6, 6, 'on_off_switch');
+      putBlock(ctx, bridgeStart + 9, 8, 'hard');
+      putBlock(ctx, bridgeStart + 9, 9, 'hard');
+      putBlock(ctx, bridgeStart + 5, 4, 'rotating');
+      putBlock(ctx, bridgeStart + 6, 4, 'hard');
+      putBlock(ctx, bridgeStart + 7, 4, 'question', 'feather');
+      break;
+
+    case 3: // B-4 / K-4 (Ludwig / Bowser): crown_mirror — on_block bridge + switch + koopa_green + feather
+      for (let c = bridgeStart + 4; c <= bridgeStart + 7; c++) {
+        putBlock(ctx, c, 10, 'on_block');
+      }
+      for (let k = bridgeStart + bridgeLen - 3; k <= bridgeStart + bridgeLen; k++) {
+        putBlock(ctx, k, 9, 'hard');
+      }
+      putBlock(ctx, bridgeStart + 4, 4, 'question', 'feather');
+      putBlock(ctx, bridgeStart + 5, 4, 'rotating');
+      putBlock(ctx, bridgeStart + 6, 5, 'on_off_switch');
+      putBlock(ctx, bridgeStart + 8, 4, 'rotating');
+      addEnemy(ctx, arenaStart + 2, 9, 'koopa_green');
+      break;
+  }
+
+  const puzzleKind = (['on_off_trap', 'shell_ricochet', 'pillar_stomp', 'crown_mirror'] as const)[arenaStyle];
   const maxHp = 6 + w * 2;
   const boss: FortressBoss = {
     x: (bridgeStart + Math.floor(bridgeLen * 0.6)) * TILE,
@@ -1408,6 +1430,10 @@ function buildSmwFortressStage(ctx: SmwCtx): { totalCols: number; boss: Fortress
     axeGrabbed: false,
     bridgeCols,
     bridgeCollapseTimer: 0,
+    puzzleKind,
+    phase: 'idle',
+    phaseTimer: 120,
+    shellSpawnTimer: 150,
   };
 
   return { totalCols, boss };

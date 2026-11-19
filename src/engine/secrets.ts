@@ -6,7 +6,7 @@
 //     castillo del mundo (salta el X-3).
 //   · Tuberías secretas interactivas: Bonus subrooms, Warp Zone SMB 1-2, Senda Estelar.
 // ============================================================================
-import { BIOMES, GROUND_ROW, STAGES_PER_WORLD, TILE } from './biomes';
+import { BIOMES, GROUND_ROW, LOGICAL_HEIGHT, STAGES_PER_WORLD, TILE } from './biomes';
 import type {
   Block,
   BlockType,
@@ -319,8 +319,14 @@ export function stepPipeTransition(world: WorldState, events: GameEvent[]): void
       // 1. Teletransporte entre tubos hermanos (modo Flip)
       if (pipe.pairPipeIndex != null && world.pipes[pipe.pairPipeIndex]) {
         const targetPipe = world.pipes[pipe.pairPipeIndex];
+        world.gravityDir = 1;
         p.x = targetPipe.x + (targetPipe.width - p.width) / 2;
-        p.y = targetPipe.y - p.height + 28 * gDir;
+        p.y = targetPipe.y - p.height + 28;
+        world.cameraX = Math.max(0, targetPipe.x - 240);
+        if ((world.worldRows ?? 14) > 14) {
+          const maxCamY = (world.worldRows ?? 14) * TILE - LOGICAL_HEIGHT;
+          world.cameraY = Math.max(0, Math.min(maxCamY, targetPipe.y - LOGICAL_HEIGHT / 2));
+        }
         world.activeWarpPipe = targetPipe;
         world.status = 'pipe_exit';
         world.statusTimer = 24;

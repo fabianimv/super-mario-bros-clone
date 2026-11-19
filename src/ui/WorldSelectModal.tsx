@@ -225,7 +225,7 @@ export const WorldSelectModal: React.FC<Props> = ({
           </View>
           <View style={[styles.chipRow, styles.chipRowNonlinear]}>
             {NONLINEAR_PARTITIONS.map((part) => {
-              const isLocked = part === 'star_road' && !progress.secretUnlocked && !freePlay;
+              const isLocked = false;
               return (
                 <Pressable
                   key={part}
