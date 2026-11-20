@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { GameSettings, SaveProgress } from '../engine/types';
+import { recordStageClear } from '../engine/partitions';
+import type { GamePartition, GameSettings, SaveProgress } from '../engine/types';
 
 const PROGRESS_KEY = '@super_plomero_progress_v1';
 const SETTINGS_KEY = '@super_plomero_settings_v1';
@@ -46,9 +47,16 @@ export const DEFAULT_PROGRESS: SaveProgress = {
   starRoadUnlockedLevel: 0,
   starRoadClearedLevels: [],
   starRoadBestStageScores: {},
+  odysseyHighScore: 0,
+  odysseyUnlockedLevel: 3,
+  odysseyClearedLevels: [],
+  odysseyBestStageScores: {},
+  odysseyUnlocked: 3,
   secretUnlocked: true,
   lastPartition: 'smw',
 };
+
+export const defaultProgress = DEFAULT_PROGRESS;
 
 export const DEFAULT_SETTINGS: GameSettings = {
   soundEnabled: true,
@@ -59,73 +67,92 @@ export const DEFAULT_SETTINGS: GameSettings = {
   controlScale: 1.0,
 };
 
+export function sanitizeProgress(parsed: Partial<SaveProgress> = {}): SaveProgress {
+  return {
+    highScore: typeof parsed.highScore === 'number' ? parsed.highScore : 0,
+    unlockedLevel: typeof parsed.unlockedLevel === 'number' ? parsed.unlockedLevel : 0,
+    clearedLevels: Array.isArray(parsed.clearedLevels) ? parsed.clearedLevels : [],
+    bestStageScores: parsed.bestStageScores ?? {},
+    totalCoins: typeof parsed.totalCoins === 'number' ? parsed.totalCoins : 0,
+    smwHighScore: typeof parsed.smwHighScore === 'number' ? parsed.smwHighScore : 0,
+    smwUnlockedLevel: typeof parsed.smwUnlockedLevel === 'number' ? parsed.smwUnlockedLevel : 0,
+    smwClearedLevels: Array.isArray(parsed.smwClearedLevels) ? parsed.smwClearedLevels : [],
+    smwBestStageScores: parsed.smwBestStageScores ?? {},
+    expHighScore: typeof parsed.expHighScore === 'number' ? parsed.expHighScore : 0,
+    expUnlockedLevel: typeof parsed.expUnlockedLevel === 'number' ? parsed.expUnlockedLevel : 0,
+    expClearedLevels: Array.isArray(parsed.expClearedLevels) ? parsed.expClearedLevels : [],
+    expBestStageScores: parsed.expBestStageScores ?? {},
+    frontierHighScore: typeof parsed.frontierHighScore === 'number' ? parsed.frontierHighScore : 0,
+    frontierUnlockedLevel: typeof parsed.frontierUnlockedLevel === 'number' ? parsed.frontierUnlockedLevel : 0,
+    frontierClearedLevels: Array.isArray(parsed.frontierClearedLevels) ? parsed.frontierClearedLevels : [],
+    frontierBestStageScores: parsed.frontierBestStageScores ?? {},
+    fortuneHighScore: typeof parsed.fortuneHighScore === 'number' ? parsed.fortuneHighScore : 0,
+    fortuneUnlockedLevel: typeof parsed.fortuneUnlockedLevel === 'number' ? parsed.fortuneUnlockedLevel : 0,
+    fortuneClearedLevels: Array.isArray(parsed.fortuneClearedLevels) ? parsed.fortuneClearedLevels : [],
+    fortuneBestStageScores: parsed.fortuneBestStageScores ?? {},
+    mirageHighScore: typeof parsed.mirageHighScore === 'number' ? parsed.mirageHighScore : 0,
+    mirageUnlockedLevel: typeof parsed.mirageUnlockedLevel === 'number' ? parsed.mirageUnlockedLevel : 0,
+    mirageClearedLevels: Array.isArray(parsed.mirageClearedLevels) ? parsed.mirageClearedLevels : [],
+    mirageBestStageScores: parsed.mirageBestStageScores ?? {},
+    echoHighScore: typeof parsed.echoHighScore === 'number' ? parsed.echoHighScore : 0,
+    echoUnlockedLevel: typeof parsed.echoUnlockedLevel === 'number' ? parsed.echoUnlockedLevel : 0,
+    echoClearedLevels: Array.isArray(parsed.echoClearedLevels) ? parsed.echoClearedLevels : [],
+    echoBestStageScores: parsed.echoBestStageScores ?? {},
+    dimHighScore: typeof parsed.dimHighScore === 'number' ? parsed.dimHighScore : 0,
+    dimUnlockedLevel: typeof parsed.dimUnlockedLevel === 'number' ? parsed.dimUnlockedLevel : 0,
+    dimClearedLevels: Array.isArray(parsed.dimClearedLevels) ? parsed.dimClearedLevels : [],
+    dimBestStageScores: parsed.dimBestStageScores ?? {},
+    towerHighScore: typeof parsed.towerHighScore === 'number' ? parsed.towerHighScore : 0,
+    towerUnlockedLevel: typeof parsed.towerUnlockedLevel === 'number' ? parsed.towerUnlockedLevel : 0,
+    towerClearedLevels: Array.isArray(parsed.towerClearedLevels) ? parsed.towerClearedLevels : [],
+    towerBestStageScores: parsed.towerBestStageScores ?? {},
+    flipHighScore: typeof parsed.flipHighScore === 'number' ? parsed.flipHighScore : 0,
+    flipUnlockedLevel: typeof parsed.flipUnlockedLevel === 'number' ? parsed.flipUnlockedLevel : 0,
+    flipClearedLevels: Array.isArray(parsed.flipClearedLevels) ? parsed.flipClearedLevels : [],
+    flipBestStageScores: parsed.flipBestStageScores ?? {},
+    starRoadHighScore: typeof parsed.starRoadHighScore === 'number' ? parsed.starRoadHighScore : 0,
+    starRoadUnlockedLevel: typeof parsed.starRoadUnlockedLevel === 'number' ? parsed.starRoadUnlockedLevel : 0,
+    starRoadClearedLevels: Array.isArray(parsed.starRoadClearedLevels) ? parsed.starRoadClearedLevels : [],
+    starRoadBestStageScores: parsed.starRoadBestStageScores ?? {},
+    odysseyHighScore: typeof parsed.odysseyHighScore === 'number' ? parsed.odysseyHighScore : 0,
+    odysseyUnlockedLevel: typeof parsed.odysseyUnlockedLevel === 'number' ? parsed.odysseyUnlockedLevel : 3,
+    odysseyClearedLevels: Array.isArray(parsed.odysseyClearedLevels) ? parsed.odysseyClearedLevels : [],
+    odysseyBestStageScores: parsed.odysseyBestStageScores ?? {},
+    odysseyUnlocked: typeof parsed.odysseyUnlocked === 'number' ? parsed.odysseyUnlocked : 3,
+    secretUnlocked: true,
+    lastPartition:
+      parsed.lastPartition === 'classic' ||
+      parsed.lastPartition === 'smw' ||
+      parsed.lastPartition === 'expedition' ||
+      parsed.lastPartition === 'frontier' ||
+      parsed.lastPartition === 'fortune' ||
+      parsed.lastPartition === 'mirage' ||
+      parsed.lastPartition === 'echo' ||
+      parsed.lastPartition === 'dimension' ||
+      parsed.lastPartition === 'tower' ||
+      parsed.lastPartition === 'flip' ||
+      parsed.lastPartition === 'star_road' ||
+      parsed.lastPartition === 'odyssey'
+        ? parsed.lastPartition
+        : 'smw',
+  };
+}
+
+export function markStageCleared(
+  prog: SaveProgress,
+  partition: GamePartition,
+  levelIndex: number,
+  score: number
+): SaveProgress {
+  return recordStageClear(prog, partition, levelIndex, score);
+}
+
 export async function loadProgress(): Promise<SaveProgress> {
   try {
     const raw = await AsyncStorage.getItem(PROGRESS_KEY);
     if (!raw) return { ...DEFAULT_PROGRESS };
     const parsed = JSON.parse(raw) as Partial<SaveProgress>;
-    return {
-      highScore: typeof parsed.highScore === 'number' ? parsed.highScore : 0,
-      unlockedLevel: typeof parsed.unlockedLevel === 'number' ? parsed.unlockedLevel : 0,
-      clearedLevels: Array.isArray(parsed.clearedLevels) ? parsed.clearedLevels : [],
-      bestStageScores: parsed.bestStageScores ?? {},
-      totalCoins: typeof parsed.totalCoins === 'number' ? parsed.totalCoins : 0,
-      smwHighScore: typeof parsed.smwHighScore === 'number' ? parsed.smwHighScore : 0,
-      smwUnlockedLevel: typeof parsed.smwUnlockedLevel === 'number' ? parsed.smwUnlockedLevel : 0,
-      smwClearedLevels: Array.isArray(parsed.smwClearedLevels) ? parsed.smwClearedLevels : [],
-      smwBestStageScores: parsed.smwBestStageScores ?? {},
-      expHighScore: typeof parsed.expHighScore === 'number' ? parsed.expHighScore : 0,
-      expUnlockedLevel: typeof parsed.expUnlockedLevel === 'number' ? parsed.expUnlockedLevel : 0,
-      expClearedLevels: Array.isArray(parsed.expClearedLevels) ? parsed.expClearedLevels : [],
-      expBestStageScores: parsed.expBestStageScores ?? {},
-      frontierHighScore: typeof parsed.frontierHighScore === 'number' ? parsed.frontierHighScore : 0,
-      frontierUnlockedLevel: typeof parsed.frontierUnlockedLevel === 'number' ? parsed.frontierUnlockedLevel : 0,
-      frontierClearedLevels: Array.isArray(parsed.frontierClearedLevels) ? parsed.frontierClearedLevels : [],
-      frontierBestStageScores: parsed.frontierBestStageScores ?? {},
-      fortuneHighScore: typeof parsed.fortuneHighScore === 'number' ? parsed.fortuneHighScore : 0,
-      fortuneUnlockedLevel: typeof parsed.fortuneUnlockedLevel === 'number' ? parsed.fortuneUnlockedLevel : 0,
-      fortuneClearedLevels: Array.isArray(parsed.fortuneClearedLevels) ? parsed.fortuneClearedLevels : [],
-      fortuneBestStageScores: parsed.fortuneBestStageScores ?? {},
-      mirageHighScore: typeof parsed.mirageHighScore === 'number' ? parsed.mirageHighScore : 0,
-      mirageUnlockedLevel: typeof parsed.mirageUnlockedLevel === 'number' ? parsed.mirageUnlockedLevel : 0,
-      mirageClearedLevels: Array.isArray(parsed.mirageClearedLevels) ? parsed.mirageClearedLevels : [],
-      mirageBestStageScores: parsed.mirageBestStageScores ?? {},
-      echoHighScore: typeof parsed.echoHighScore === 'number' ? parsed.echoHighScore : 0,
-      echoUnlockedLevel: typeof parsed.echoUnlockedLevel === 'number' ? parsed.echoUnlockedLevel : 0,
-      echoClearedLevels: Array.isArray(parsed.echoClearedLevels) ? parsed.echoClearedLevels : [],
-      echoBestStageScores: parsed.echoBestStageScores ?? {},
-      dimHighScore: typeof parsed.dimHighScore === 'number' ? parsed.dimHighScore : 0,
-      dimUnlockedLevel: typeof parsed.dimUnlockedLevel === 'number' ? parsed.dimUnlockedLevel : 0,
-      dimClearedLevels: Array.isArray(parsed.dimClearedLevels) ? parsed.dimClearedLevels : [],
-      dimBestStageScores: parsed.dimBestStageScores ?? {},
-      towerHighScore: typeof parsed.towerHighScore === 'number' ? parsed.towerHighScore : 0,
-      towerUnlockedLevel: typeof parsed.towerUnlockedLevel === 'number' ? parsed.towerUnlockedLevel : 0,
-      towerClearedLevels: Array.isArray(parsed.towerClearedLevels) ? parsed.towerClearedLevels : [],
-      towerBestStageScores: parsed.towerBestStageScores ?? {},
-      flipHighScore: typeof parsed.flipHighScore === 'number' ? parsed.flipHighScore : 0,
-      flipUnlockedLevel: typeof parsed.flipUnlockedLevel === 'number' ? parsed.flipUnlockedLevel : 0,
-      flipClearedLevels: Array.isArray(parsed.flipClearedLevels) ? parsed.flipClearedLevels : [],
-      flipBestStageScores: parsed.flipBestStageScores ?? {},
-      starRoadHighScore: typeof parsed.starRoadHighScore === 'number' ? parsed.starRoadHighScore : 0,
-      starRoadUnlockedLevel: typeof parsed.starRoadUnlockedLevel === 'number' ? parsed.starRoadUnlockedLevel : 0,
-      starRoadClearedLevels: Array.isArray(parsed.starRoadClearedLevels) ? parsed.starRoadClearedLevels : [],
-      starRoadBestStageScores: parsed.starRoadBestStageScores ?? {},
-      secretUnlocked: true,
-      lastPartition:
-        parsed.lastPartition === 'classic' ||
-        parsed.lastPartition === 'smw' ||
-        parsed.lastPartition === 'expedition' ||
-        parsed.lastPartition === 'frontier' ||
-        parsed.lastPartition === 'fortune' ||
-        parsed.lastPartition === 'mirage' ||
-        parsed.lastPartition === 'echo' ||
-        parsed.lastPartition === 'dimension' ||
-        parsed.lastPartition === 'tower' ||
-        parsed.lastPartition === 'flip' ||
-        parsed.lastPartition === 'star_road'
-          ? parsed.lastPartition
-          : 'smw',
-    };
+    return sanitizeProgress(parsed);
   } catch {
     return { ...DEFAULT_PROGRESS };
   }

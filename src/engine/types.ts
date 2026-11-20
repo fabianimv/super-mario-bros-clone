@@ -9,7 +9,8 @@ export type GamePartition =
   | 'dimension'
   | 'tower'
   | 'flip'
-  | 'star_road';
+  | 'star_road'
+  | 'odyssey';
 
 export type BiomeId =
   | 'meadow'
@@ -349,6 +350,12 @@ export interface Wrench {
   piercing?: boolean;
 }
 
+export interface GrappleAnchor {
+  id: number;
+  x: number;
+  y: number;
+}
+
 export interface CrumbledBlock {
   block: Block;
   respawnTimer: number;
@@ -406,7 +413,7 @@ export interface Enemy {
   // Super Plomero Brawl (Vida, Aturdimiento, Rol de Combate, Físicas de Proyectil)
   maxHp?: number;
   stunTimer?: number;
-  brawlRole?: 'grunt' | 'captain' | 'bounty_commander' | 'shadow_rival' | 'core_crystal' | 'dojo_master';
+  brawlRole?: 'grunt' | 'captain' | 'bounty_commander' | 'shadow_rival' | 'core_crystal' | 'dojo_master' | 'titan_boss';
   knockbackVx?: number;
   launchedByPlayer?: boolean;
   shieldFront?: boolean;
@@ -650,6 +657,19 @@ export interface Player {
   parryFlashTimer?: number;
   furyMeter?: number; // 0..100
   furyTimer?: number; // 0..480 frames
+  // Odisea Abierta (Gancho, Crono-Jetpack y Mecha)
+  grappleAnchorId?: number | null;
+  grappleX?: number;
+  grappleY?: number;
+  grappleLen?: number;
+  grappleAngle?: number;
+  grappleAngVel?: number;
+  jetpackFuel?: number;      // 0..100
+  jetpackMaxFuel?: number;   // 100
+  jetpackActive?: boolean;
+  chronoTimer?: number;      // 0..240 frames de Cámara Lenta (Tiempo Bala)
+  chronoCooldown?: number;   // enfriamiento entre usos
+  mechaSuit?: boolean;       // Armadura Mecha-Plomero en O-3
 }
 
 export type WorldStatus =
@@ -731,6 +751,11 @@ export interface MainStageSnapshot {
   arenaLockX?: number;
   arenaLockActive?: boolean;
   arenaGoTimer?: number;
+  // Odisea Abierta
+  odysseyMode?: 'citadel_grapple' | 'chrono_canyon' | 'titan_crater';
+  grappleAnchors?: GrappleAnchor[];
+  timeScale?: number;        // 1.0 normal, 0.30 en Chrono-Time para enemigos/proyectiles
+  titanPhase?: 1 | 2 | 3;    // fase actual del jefe colosal en O-3
   exitX: number;
   exitY: number;
 }
@@ -807,6 +832,12 @@ export interface SaveProgress {
   starRoadUnlockedLevel?: number;
   starRoadClearedLevels?: number[];
   starRoadBestStageScores?: Record<number, number>;
+  // Odisea Abierta (3 mundos abiertos)
+  odysseyHighScore?: number;
+  odysseyUnlockedLevel?: number;
+  odysseyClearedLevels?: number[];
+  odysseyBestStageScores?: Record<number, number>;
+  odysseyUnlocked?: number;
   // Desbloqueo permanente de mundo secreto
   secretUnlocked?: boolean;
   lastPartition: GamePartition;
@@ -916,4 +947,9 @@ export interface WorldState {
   arenaLockX?: number;
   arenaLockActive?: boolean;
   arenaGoTimer?: number;
+  // Odisea Abierta (Gancho, Crono-Jetpack, Tiempo Bala, Titán)
+  odysseyMode?: 'citadel_grapple' | 'chrono_canyon' | 'titan_crater';
+  grappleAnchors?: GrappleAnchor[];
+  timeScale?: number;        // 1.0 normal, 0.30 en Chrono-Time para enemigos/proyectiles
+  titanPhase?: 1 | 2 | 3;    // fase actual del jefe colosal en O-3
 }

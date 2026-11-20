@@ -183,6 +183,7 @@ export function objectiveForStage(
   isCastle = false,
   isBoss = false
 ): StageObjective {
+  if (partition === 'odyssey') return 'core_breaker';
   if (isCastle || isBoss || stageIndex % 4 === 3) return 'reach';
   if (partition === 'flip') return 'core_breaker';
   if (partition === 'mirage') {
@@ -197,6 +198,7 @@ export function objectiveForStage(
 }
 
 export function getStageObjective(levelIndex: number, partition: GamePartition): StageObjective {
+  if (partition === 'odyssey') return 'core_breaker';
   if (levelIndex % 4 === 3) return 'reach';
   if (partition === 'flip') return 'core_breaker';
   const table =
@@ -290,7 +292,7 @@ function makePickup(world: WorldState, kind: Pickup['kind'], col: number, row: n
 }
 
 function placeFinalSprintSwitch(world: WorldState): void {
-  if (world.partition === 'flip') return;
+  if (world.partition === 'flip' || world.partition === 'odyssey') return;
   const combatObj =
     world.objective === 'brawl_captain' ||
     world.objective === 'bounty_hunt' ||
@@ -511,6 +513,7 @@ function promoteOrSpawnShadowCombo(world: WorldState): void {
 }
 
 function ensureCoreBreaker(world: WorldState): void {
+  if (world.partition === 'odyssey') return;
   world.enemies = world.enemies ?? [];
   const cores = world.enemies.filter((e) => e.brawlRole === 'core_crystal');
   if (cores.length >= 3) return;
@@ -622,6 +625,9 @@ export function applyStageObjective(world: WorldState): WorldState {
 /** Contabiliza objetivos de combate totales, vivos y derrotados */
 export function countBrawlTargets(world: WorldState): { total: number; alive: number; defeated: number } {
   const isTarget = (e: Enemy): boolean => {
+    if (world.objective === 'core_breaker') {
+      return e.brawlRole === 'core_crystal' || e.brawlRole === 'titan_boss';
+    }
     if (e.brawlRole && ['captain', 'bounty_commander', 'core_crystal', 'shadow_rival', 'dojo_master'].includes(e.brawlRole)) {
       return true;
     }
@@ -666,6 +672,17 @@ export function objectiveHudLabel(world: WorldState): string | null {
     return `⚡ SPRINT [P] ${Math.ceil(world.pSwitchTimer! / 60)}s`;
   }
   const { total, alive, defeated } = countBrawlTargets(world);
+  if (world.partition === 'odyssey') {
+    if (world.odysseyMode === 'citadel_grapple') {
+      return alive > 0 ? `🪝 BALIZAS ${defeated}/${total}` : '🪝 ¡CUMBRE LIBRE!';
+    }
+    if (world.odysseyMode === 'chrono_canyon') {
+      return alive > 0 ? `⏳ REACTORES ${defeated}/${total}` : '⏳ ¡PORTAL LIBRE!';
+    }
+    if (world.odysseyMode === 'titan_crater') {
+      return alive > 0 ? `🤖 TITÁN FASE ${world.titanPhase ?? 1}` : '🤖 ¡TITÁN CAÍDO!';
+    }
+  }
   switch (world.objective) {
     case 'brawl_captain':
       return alive > 0 ? '⚔ CAPITÁN' : '⚔ ¡META LIBRE!';
@@ -992,7 +1009,7 @@ export function enforceGoalLock(world: WorldState, events: GameEvent[], cb: Obje
       ? `¡FALTAN ${alive} OBJETIVOS!`
       : '¡META BLOQUEADA!';
 
-  const isNonlinear = world.partition === 'flip' || world.arenaWave != null;
+  const isNonlinear = world.partition === 'flip' || world.partition === 'odyssey' || world.arenaWave != null;
   if (isNonlinear) {
     const fpW = 'width' in fp ? fp.width : 16;
     const overlapsGoal =

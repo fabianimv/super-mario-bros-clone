@@ -147,6 +147,7 @@ export class SkiaWorldRenderer {
     this.drawPipes(canvas, atlas, world, camX, viewportWorldW, pixelFont);
     this.drawMovingPlatforms(canvas, atlas, world, camX, viewportWorldW);
     this.drawSprings(canvas, atlas, world);
+    this.drawGrappleAnchors(canvas, world, camX, viewportWorldW, pixelFont);
     this.drawWagerAltars(canvas, world, camX, viewportWorldW);
     this.drawEcho(canvas, world);
     this.drawVisibleBlocks(canvas, atlas, world, startCol, endCol, camY);
@@ -268,6 +269,20 @@ export class SkiaWorldRenderer {
     this.drawChaseWall(canvas, world);
 
     canvas.restore(); // End camera transform
+
+    // 17. Tinte Cinemático Índigo/Violeta de Cámara Lenta (Tiempo Bala)
+    if ((world.player.chronoTimer ?? 0) > 0) {
+      this.fillPaint.setColor(Skia.Color('rgba(79, 70, 229, 0.22)'));
+      canvas.drawRect(Skia.XYWHRect(0, 0, viewportWorldW, LOGICAL_HEIGHT), this.fillPaint);
+      this.fillPaint.setColor(Skia.Color('rgba(147, 51, 234, 0.10)'));
+      canvas.drawRect(Skia.XYWHRect(0, 0, viewportWorldW, LOGICAL_HEIGHT), this.fillPaint);
+    }
+
+    // 18. Mini-Mapa / Radar de Mundo Abierto (Odisea)
+    if (world.partition === 'odyssey') {
+      this.drawOdysseyMiniMap(canvas, world, viewportWorldW, pixelFont);
+    }
+
     canvas.restore(); // End world scale
 
     if (crtScanlines) {
@@ -1745,6 +1760,94 @@ export class SkiaWorldRenderer {
         }
       }
     }
+
+    // 5. JETPACK DUAL PLASMA FLAMES
+    if (p.jetpackActive) {
+      const footY = p.y + p.height;
+      const leftNx = p.x + 3;
+      const rightNx = p.x + p.width - 5;
+      const nozzles = [leftNx, rightNx];
+
+      for (const nx of nozzles) {
+        const flameH = 9 + (frame % 5) * 2;
+        this.fillPaint.setColor(Skia.Color('rgba(6, 182, 212, 0.45)'));
+        canvas.drawOval(Skia.XYWHRect(nx - 3, footY - 1, 7, flameH + 5), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#06b6d4'));
+        canvas.drawOval(Skia.XYWHRect(nx - 2, footY, 5, flameH), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#38bdf8'));
+        canvas.drawOval(Skia.XYWHRect(nx - 1, footY, 3, flameH * 0.75), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#ffffff'));
+        canvas.drawOval(Skia.XYWHRect(nx - 0.5, footY, 2, flameH * 0.4), this.fillPaint);
+
+        const spY = footY + flameH + ((frame * 3 + nx) % 8);
+        this.fillPaint.setColor(Skia.Color('#a5f3fc'));
+        canvas.drawRect(Skia.XYWHRect(nx, spY, 2, 2), this.fillPaint);
+      }
+    }
+
+    // 6. CHRONO BULLET-TIME CIRCULAR CLOCK WAVES
+    if ((p.chronoTimer ?? 0) > 0) {
+      for (let i = 0; i < 3; i++) {
+        const prog = (frame * 1.6 + i * 24) % 72;
+        const alpha = Math.max(0, 1 - prog / 72);
+        this.strokePaint.setStrokeWidth(1.8);
+        this.strokePaint.setColor(Skia.Color(`rgba(192, 132, 252, ${alpha * 0.7})`));
+        canvas.drawCircle(px, py, 12 + prog, this.strokePaint);
+      }
+
+      const dialR = 32;
+      this.strokePaint.setStrokeWidth(1.2);
+      this.strokePaint.setColor(Skia.Color('rgba(168, 85, 247, 0.5)'));
+      canvas.drawCircle(px, py, dialR, this.strokePaint);
+
+      for (let h = 0; h < 12; h++) {
+        const a = (h * Math.PI) / 6;
+        const cosA = Math.cos(a);
+        const sinA = Math.sin(a);
+        const isQ = h % 3 === 0;
+        const inR = isQ ? dialR - 5 : dialR - 3;
+        this.strokePaint.setStrokeWidth(isQ ? 2 : 1);
+        this.strokePaint.setColor(Skia.Color(isQ ? '#facc15' : '#c084fc'));
+        canvas.drawLine(
+          px + cosA * inR,
+          py + sinA * inR,
+          px + cosA * dialR,
+          py + sinA * dialR,
+          this.strokePaint
+        );
+      }
+
+      const minA = (frame * 0.09) % (Math.PI * 2);
+      const hourA = minA / 12;
+      this.strokePaint.setStrokeWidth(1.8);
+      this.strokePaint.setColor(Skia.Color('#38bdf8'));
+      canvas.drawLine(
+        px,
+        py,
+        px + Math.cos(minA) * 22,
+        py + Math.sin(minA) * 22,
+        this.strokePaint
+      );
+      this.strokePaint.setStrokeWidth(2.6);
+      this.strokePaint.setColor(Skia.Color('#facc15'));
+      canvas.drawLine(
+        px,
+        py,
+        px + Math.cos(hourA) * 14,
+        py + Math.sin(hourA) * 14,
+        this.strokePaint
+      );
+    }
+
+    // 7. MECHA-PLOMERO ARMOR
+    if (p.mechaSuit) {
+      this.drawMechaSuit(canvas, p, frame);
+    }
+
+    // 8. GRAPPLE ROPE / NEON BEAM
+    if (p.grappleAnchorId != null) {
+      this.drawGrappleRope(canvas, world, p);
+    }
   }
 
   private drawShockwave(canvas: SkCanvas, world: WorldState): void {
@@ -2150,6 +2253,11 @@ export class SkiaWorldRenderer {
     en: Enemy,
     pixelFont?: SkFont | null
   ): void {
+    if (en.brawlRole === 'titan_boss') {
+      this.drawMechaTitanRex(canvas, atlas, world, en, pixelFont);
+      return;
+    }
+
     if (en.brawlRole === 'core_crystal') {
       this.drawCoreCrystal(canvas, en, world.frameCount);
       this.drawEnemyCombatOverlays(canvas, en, world.frameCount, pixelFont);
@@ -2660,5 +2768,625 @@ export class SkiaWorldRenderer {
 
     const bodyFlip = p.spinJumping ? Math.floor(world.frameCount / 3) % 2 === 1 : flipX;
     this.blitSprite(canvas, atlas, `hero_big_${variant}_${pose}`, p.x - 5, drawY, 32, 48, bodyFlip);
+  }
+
+  private drawGrappleAnchors(
+    canvas: SkCanvas,
+    world: WorldState,
+    camX: number,
+    viewportWorldW: number,
+    pixelFont?: SkFont | null
+  ): void {
+    if (!world.grappleAnchors || world.grappleAnchors.length === 0) return;
+    const p = world.player;
+    const px = p.x + p.width / 2;
+    const py = p.y + p.height / 2;
+    const frame = world.frameCount;
+
+    for (const anchor of world.grappleAnchors) {
+      if (anchor.x < camX - 48 || anchor.x > camX + viewportWorldW + 48) continue;
+      const dx = anchor.x - px;
+      const dy = anchor.y - py;
+      const dist = Math.hypot(dx, dy);
+      const inRange = dist <= 304; // 9.5 * TILE (304 px)
+      const isLatched = p.grappleAnchorId === anchor.id;
+
+      const pulse = Math.sin(frame * 0.18 + anchor.id) * 2;
+
+      // Outer aura
+      this.fillPaint.setColor(
+        Skia.Color(
+          isLatched
+            ? 'rgba(6, 182, 212, 0.45)'
+            : inRange
+            ? 'rgba(34, 197, 94, 0.35)'
+            : 'rgba(234, 179, 8, 0.25)'
+        )
+      );
+      canvas.drawCircle(anchor.x, anchor.y, 14 + pulse, this.fillPaint);
+
+      // Concentric Outer Ring
+      this.strokePaint.setStrokeWidth(2.5);
+      this.strokePaint.setColor(
+        Skia.Color(isLatched ? '#22d3ee' : inRange ? '#4ade80' : '#eab308')
+      );
+      canvas.drawCircle(anchor.x, anchor.y, 11 + pulse * 0.5, this.strokePaint);
+
+      // Concentric Middle Ring
+      this.strokePaint.setStrokeWidth(1.8);
+      this.strokePaint.setColor(
+        Skia.Color(isLatched ? '#ffffff' : inRange ? '#86efac' : '#fef08a')
+      );
+      canvas.drawCircle(anchor.x, anchor.y, 7, this.strokePaint);
+
+      // Core Node
+      this.fillPaint.setColor(
+        Skia.Color(isLatched ? '#ffffff' : inRange ? '#22c55e' : '#facc15')
+      );
+      canvas.drawCircle(anchor.x, anchor.y, 4, this.fillPaint);
+
+      // 4 Magnetic Corner Nodes
+      for (let k = 0; k < 4; k++) {
+        const a = (k * Math.PI) / 2 + frame * 0.05;
+        const nx = anchor.x + Math.cos(a) * 11;
+        const ny = anchor.y + Math.sin(a) * 11;
+        this.fillPaint.setColor(Skia.Color(inRange ? '#22d3ee' : '#facc15'));
+        canvas.drawRect(Skia.XYWHRect(nx - 1.5, ny - 1.5, 3, 3), this.fillPaint);
+      }
+
+      // Range Target Reticle & "Pulsa Y" prompt when in range!
+      if (inRange && !isLatched) {
+        const targetR = 19 + Math.sin(frame * 0.25) * 2.5;
+        this.strokePaint.setStrokeWidth(2);
+        this.strokePaint.setColor(Skia.Color('#22d3ee'));
+        canvas.drawCircle(anchor.x, anchor.y, targetR, this.strokePaint);
+        this.strokePaint.setStrokeWidth(1.2);
+        this.strokePaint.setColor(Skia.Color('#4ade80'));
+        canvas.drawCircle(anchor.x, anchor.y, targetR - 3.5, this.strokePaint);
+
+        // 4 Reticle Brackets
+        for (let k = 0; k < 4; k++) {
+          const a = (k * Math.PI) / 2 + Math.PI / 4;
+          const bx = anchor.x + Math.cos(a) * (targetR + 3);
+          const by = anchor.y + Math.sin(a) * (targetR + 3);
+          this.fillPaint.setColor(Skia.Color('#4ade80'));
+          canvas.drawRect(Skia.XYWHRect(bx - 1.5, by - 1.5, 3, 3), this.fillPaint);
+        }
+
+        // Small prompt pill above anchor: [Y]
+        const pillY = anchor.y - targetR - 12;
+        if (pixelFont) {
+          this.fillPaint.setColor(Skia.Color('rgba(6, 9, 19, 0.88)'));
+          canvas.drawRect(Skia.XYWHRect(anchor.x - 14, pillY, 28, 10), this.fillPaint);
+          this.strokePaint.setStrokeWidth(1);
+          this.strokePaint.setColor(Skia.Color('#22d3ee'));
+          canvas.drawRect(Skia.XYWHRect(anchor.x - 14, pillY, 28, 10), this.strokePaint);
+          this.fillPaint.setColor(Skia.Color('#4ade80'));
+          canvas.drawText('[Y]', anchor.x - 8, pillY + 8, this.fillPaint, pixelFont);
+        } else {
+          this.fillPaint.setColor(Skia.Color('#22d3ee'));
+          canvas.drawCircle(anchor.x, pillY + 4, 4, this.fillPaint);
+        }
+      }
+    }
+  }
+
+  private drawGrappleRope(canvas: SkCanvas, world: WorldState, p: Player): void {
+    if (p.grappleAnchorId == null) return;
+    const px = p.x + p.width / 2;
+    const py = p.y + p.height / 2;
+    const gx = p.grappleX ?? px;
+    const gy = p.grappleY ?? py;
+    const frame = world.frameCount;
+
+    // 1. Neon cyan outer halo
+    this.strokePaint.setStrokeWidth(6);
+    this.strokePaint.setColor(Skia.Color('rgba(6, 182, 212, 0.32)'));
+    canvas.drawLine(px, py, gx, gy, this.strokePaint);
+
+    // 2. Bright cyan energy beam
+    this.strokePaint.setStrokeWidth(3);
+    this.strokePaint.setColor(Skia.Color('#22d3ee'));
+    canvas.drawLine(px, py, gx, gy, this.strokePaint);
+
+    // 3. Tense white core
+    this.strokePaint.setStrokeWidth(1.2);
+    this.strokePaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawLine(px, py, gx, gy, this.strokePaint);
+
+    // 4. Moving energy pulses along the rope
+    for (let s = 0; s < 4; s++) {
+      const t = (frame * 0.08 + s * 0.25) % 1;
+      const bx = px + (gx - px) * t;
+      const by = py + (gy - py) * t;
+      this.fillPaint.setColor(Skia.Color('#a5f3fc'));
+      canvas.drawCircle(bx, by, 3, this.fillPaint);
+      this.fillPaint.setColor(Skia.Color('#ffffff'));
+      canvas.drawCircle(bx, by, 1.5, this.fillPaint);
+    }
+
+    // 5. Sparks and magnetic flare at the anchor point
+    for (let i = 0; i < 6; i++) {
+      const a = ((frame * 19 + i * 60) % 360) * (Math.PI / 180);
+      const dist = 5 + ((frame * 3 + i * 7) % 12);
+      const sx = gx + Math.cos(a) * dist;
+      const sy = gy + Math.sin(a) * dist;
+      this.fillPaint.setColor(Skia.Color(i % 2 === 0 ? '#ffffff' : '#facc15'));
+      canvas.drawRect(Skia.XYWHRect(sx - 1.5, sy - 1.5, 3, 3), this.fillPaint);
+    }
+
+    this.fillPaint.setColor(Skia.Color('rgba(255, 255, 255, 0.8)'));
+    canvas.drawCircle(gx, gy, 5, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#06b6d4'));
+    canvas.drawCircle(gx, gy, 8, this.fillPaint);
+
+    // Sparks at player tether point
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawCircle(px, py, 4, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#22d3ee'));
+    canvas.drawCircle(px, py, 6, this.fillPaint);
+  }
+
+  private drawMechaSuit(canvas: SkCanvas, p: Player, frame: number): void {
+    const face = p.facing;
+    const px = p.x;
+    const py = p.y;
+    const pw = p.width;
+    const ph = p.height;
+    const isSmall = ph <= 20;
+
+    // 1. Armored Pauldrons (Shoulder Plates with Gold Trim)
+    const shoulderY = isSmall ? py + 4 : py + 10;
+    const pWidth = 10;
+    const pHeight = 8;
+    const leftPadX = px - 4;
+    const rightPadX = px + pw - 6;
+
+    this.fillPaint.setColor(Skia.Color('#991b1b')); // Deep Crimson
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(leftPadX, shoulderY, pWidth, pHeight), 2, 2), this.fillPaint);
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(rightPadX, shoulderY, pWidth, pHeight), 2, 2), this.fillPaint);
+
+    this.strokePaint.setStrokeWidth(1.5);
+    this.strokePaint.setColor(Skia.Color('#facc15')); // Gold trim
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(leftPadX, shoulderY, pWidth, pHeight), 2, 2), this.strokePaint);
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(rightPadX, shoulderY, pWidth, pHeight), 2, 2), this.strokePaint);
+
+    // 2. Reinforced Chestplate & Arc Reactor
+    const chestY = shoulderY + 5;
+    const chestW = pw - 2;
+    const chestH = isSmall ? 8 : 12;
+    const chestX = px + 1;
+    this.fillPaint.setColor(Skia.Color('#b91c1c'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(chestX, chestY, chestW, chestH), 3, 3), this.fillPaint);
+    this.strokePaint.setStrokeWidth(1);
+    this.strokePaint.setColor(Skia.Color('#facc15'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(chestX, chestY, chestW, chestH), 3, 3), this.strokePaint);
+
+    // Glowing cyan mini-reactor on chest
+    const rCx = chestX + chestW / 2;
+    const rCy = chestY + chestH / 2;
+    this.fillPaint.setColor(Skia.Color('rgba(6, 182, 212, 0.45)'));
+    canvas.drawCircle(rCx, rCy, 4, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#22d3ee'));
+    canvas.drawCircle(rCx, rCy, 2.5, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawCircle(rCx, rCy, 1, this.fillPaint);
+
+    // 3. Cybernetic Visor across Plomero's Eyes
+    const headY = isSmall ? py + 1 : py + 3;
+    const eyeY = headY + 5;
+    const visorW = 14;
+    const visorH = 4;
+    const visorX = face === 1 ? px + pw - 12 : px - 2;
+
+    this.fillPaint.setColor(Skia.Color('#b91c1c'));
+    canvas.drawRect(Skia.XYWHRect(visorX - 1, eyeY - 2, visorW + 2, 2.5), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#facc15'));
+    canvas.drawRect(Skia.XYWHRect(visorX + 2, eyeY - 3.5, visorW - 4, 1.5), this.fillPaint);
+
+    this.fillPaint.setColor(Skia.Color('rgba(6, 182, 212, 0.5)'));
+    canvas.drawRect(Skia.XYWHRect(visorX - 1, eyeY - 1, visorW + 2, visorH + 2), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#22d3ee'));
+    canvas.drawRect(Skia.XYWHRect(visorX, eyeY, visorW, visorH), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawRect(Skia.XYWHRect(face === 1 ? visorX + 6 : visorX + 2, eyeY + 1, 5, 2), this.fillPaint);
+
+    // 4. Side-Mounted Plasma Cannon on Plomero's Weapon Arm
+    const cannonLen = 13;
+    const cannonH = 6;
+    const cannonX = face === 1 ? px + pw - 2 : px - cannonLen + 2;
+    const cannonY = shoulderY + 4;
+
+    this.fillPaint.setColor(Skia.Color('#1e293b'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(cannonX, cannonY, cannonLen, cannonH), 2, 2), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#475569'));
+    canvas.drawRect(
+      Skia.XYWHRect(face === 1 ? cannonX + 2 : cannonX + cannonLen - 6, cannonY + 1, 4, cannonH - 2),
+      this.fillPaint
+    );
+    this.fillPaint.setColor(Skia.Color('#facc15'));
+    canvas.drawRect(Skia.XYWHRect(cannonX, cannonY + cannonH - 1.5, cannonLen, 1.5), this.fillPaint);
+
+    const muzzleX = face === 1 ? cannonX + cannonLen : cannonX;
+    const muzzleY = cannonY + cannonH / 2;
+    const chargePulse = Math.sin(frame * 0.3) * 1.5;
+    this.fillPaint.setColor(Skia.Color('rgba(6, 182, 212, 0.6)'));
+    canvas.drawCircle(muzzleX, muzzleY, 5 + chargePulse, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#38bdf8'));
+    canvas.drawCircle(muzzleX, muzzleY, 3, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawCircle(muzzleX, muzzleY, 1.5, this.fillPaint);
+
+    // 5. Heavy Armored Boot Thrusters
+    const bootY = py + ph - 5;
+    this.fillPaint.setColor(Skia.Color('#334155'));
+    canvas.drawRect(Skia.XYWHRect(px - 1, bootY, pw + 2, 5), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#facc15'));
+    canvas.drawRect(Skia.XYWHRect(px - 1, bootY + 3.5, pw + 2, 1.5), this.fillPaint);
+  }
+
+  private drawMechaTitanRex(
+    canvas: SkCanvas,
+    atlas: SkiaSpriteAtlas,
+    world: WorldState,
+    en: Enemy,
+    pixelFont?: SkFont | null
+  ): void {
+    const frame = world.frameCount;
+    const w = en.width;
+    const h = en.height;
+    const bx = en.x;
+    const by = en.y;
+    const cx = bx + w / 2;
+    const facing = en.facing;
+
+    const maxHp = en.maxHp ?? 18;
+    const curHp = Math.max(0, Math.min(maxHp, en.hp));
+    const phase: 1 | 2 | 3 = world.titanPhase ?? (curHp <= 6 ? 3 : curHp <= 12 ? 2 : 1);
+
+    const coreColor = phase === 1 ? '#06b6d4' : phase === 2 ? '#f97316' : '#dc2626';
+    const coreGlow =
+      phase === 1
+        ? 'rgba(6, 182, 212, 0.45)'
+        : phase === 2
+        ? 'rgba(249, 115, 22, 0.45)'
+        : 'rgba(220, 38, 38, 0.55)';
+    const corePulse = Math.sin(frame * (phase === 3 ? 0.35 : 0.2)) * (phase === 3 ? 4 : 2.5);
+
+    // 1. Ground contact shadow
+    this.fillPaint.setColor(Skia.Color('rgba(0, 0, 0, 0.35)'));
+    canvas.drawOval(Skia.XYWHRect(bx + 4, by + h - 5, w - 8, 9), this.fillPaint);
+
+    // 2. Heavy hydraulic legs & footpads
+    const legW = 15;
+    const legH = 20;
+    const legY = by + h - legH;
+    const legL = bx + 6;
+    const legR = bx + w - 21;
+
+    this.fillPaint.setColor(Skia.Color('#1e293b'));
+    canvas.drawRect(Skia.XYWHRect(legL, legY, legW, legH), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(legR, legY, legW, legH), this.fillPaint);
+
+    this.fillPaint.setColor(Skia.Color('#334155'));
+    canvas.drawRect(Skia.XYWHRect(legL + 2, legY + 2, legW - 4, legH - 4), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(legR + 2, legY + 2, legW - 4, legH - 4), this.fillPaint);
+
+    // Gold armor kneecaps
+    this.fillPaint.setColor(Skia.Color('#d97706'));
+    canvas.drawRect(Skia.XYWHRect(legL + 2, legY + 4, 6, 6), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(legR + legW - 8, legY + 4, 6, 6), this.fillPaint);
+
+    // 3. Segmented Razor Tail (behind back)
+    const tailX = facing === 1 ? bx - 14 : bx + w - 2;
+    const tailY = by + h * 0.42;
+    this.fillPaint.setColor(Skia.Color('#1e293b'));
+    canvas.drawRect(Skia.XYWHRect(tailX, tailY, 16, 12), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#475569'));
+    canvas.drawRect(Skia.XYWHRect(tailX + 2, tailY + 2, 12, 8), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#f59e0b'));
+    canvas.drawRect(
+      Skia.XYWHRect(facing === 1 ? tailX - 4 : tailX + 16, tailY + 1, 4, 8),
+      this.fillPaint
+    );
+
+    // 4. Massive Torso & Chassis Plating
+    this.fillPaint.setColor(Skia.Color('#0f172a'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(bx + 4, by + 12, w - 8, h - 22), 6, 6), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#1e293b'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(bx + 7, by + 14, w - 14, h - 26), 4, 4), this.fillPaint);
+
+    // Gold Armor Seams & Trim
+    this.strokePaint.setStrokeWidth(2);
+    this.strokePaint.setColor(Skia.Color('#d97706'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(bx + 7, by + 14, w - 14, h - 26), 4, 4), this.strokePaint);
+
+    // Exhaust chimneys on shoulders
+    this.fillPaint.setColor(Skia.Color('#334155'));
+    canvas.drawRect(Skia.XYWHRect(bx + 9, by + 5, 8, 9), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(bx + w - 17, by + 5, 8, 9), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color(coreColor));
+    canvas.drawRect(Skia.XYWHRect(bx + 11, by + 4, 4, 2), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(bx + w - 15, by + 4, 4, 2), this.fillPaint);
+
+    // 5. Pulsing Pectoral Core (Chest Reactor)
+    const rcx = cx;
+    const rcy = by + h * 0.52;
+
+    this.fillPaint.setColor(Skia.Color(coreGlow));
+    canvas.drawCircle(rcx, rcy, 13 + corePulse, this.fillPaint);
+
+    this.strokePaint.setStrokeWidth(2.5);
+    this.strokePaint.setColor(Skia.Color('#facc15'));
+    canvas.drawCircle(rcx, rcy, 9 + corePulse * 0.4, this.strokePaint);
+
+    this.fillPaint.setColor(Skia.Color(coreColor));
+    canvas.drawCircle(rcx, rcy, 7 + corePulse * 0.4, this.fillPaint);
+
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawCircle(rcx, rcy, 3, this.fillPaint);
+
+    if (phase === 3) {
+      for (let s = 0; s < 4; s++) {
+        const a = ((frame * 23 + s * 90) % 360) * (Math.PI / 180);
+        const dist = 11 + ((frame * 3 + s * 7) % 8);
+        this.strokePaint.setStrokeWidth(1.5);
+        this.strokePaint.setColor(Skia.Color('#ef4444'));
+        canvas.drawLine(
+          rcx,
+          rcy,
+          rcx + Math.cos(a) * dist,
+          rcy + Math.sin(a) * dist,
+          this.strokePaint
+        );
+      }
+    }
+
+    // 6. Cybernetic Head & Laser Eyes
+    const headW = 30;
+    const headH = 22;
+    const hx = facing === 1 ? bx + w - 24 : bx - 6;
+    const hy = by + 2;
+
+    this.fillPaint.setColor(Skia.Color('#1e293b'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(hx, hy, headW, headH), 4, 4), this.fillPaint);
+    this.strokePaint.setStrokeWidth(1.5);
+    this.strokePaint.setColor(Skia.Color('#b45309'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(hx, hy, headW, headH), 4, 4), this.strokePaint);
+
+    // Razor steel teeth
+    this.fillPaint.setColor(Skia.Color('#f8fafc'));
+    const jawY = hy + headH - 5;
+    for (let t = 0; t < 4; t++) {
+      const tx = hx + 4 + t * 6;
+      canvas.drawRect(Skia.XYWHRect(tx, jawY, 3, 4), this.fillPaint);
+    }
+
+    // Glowing Laser Eyes & Flares
+    const eyeX = facing === 1 ? hx + headW - 9 : hx + 5;
+    const eyeY = hy + 7;
+    this.fillPaint.setColor(Skia.Color('#ef4444'));
+    canvas.drawCircle(eyeX, eyeY, 3.5, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#fef08a'));
+    canvas.drawCircle(eyeX, eyeY, 1.5, this.fillPaint);
+
+    const flareLen = 18;
+    this.strokePaint.setStrokeWidth(1.8);
+    this.strokePaint.setColor(Skia.Color('#ef4444'));
+    canvas.drawLine(
+      eyeX,
+      eyeY,
+      eyeX + facing * flareLen,
+      eyeY,
+      this.strokePaint
+    );
+    this.strokePaint.setStrokeWidth(0.8);
+    this.strokePaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawLine(
+      eyeX,
+      eyeY,
+      eyeX + facing * (flareLen * 0.6),
+      eyeY,
+      this.strokePaint
+    );
+
+    // 7. Giant Boss Health Bar & Phase Label
+    const barW = 76;
+    const barH = 7;
+    const barX = bx + (w - barW) / 2;
+    const barY = by - 24;
+
+    const phaseText =
+      phase === 1
+        ? 'FASE 1: BLINDAJE'
+        : phase === 2
+        ? 'FASE 2: SÍSMICO'
+        : 'FASE 3: SOBRECARGA';
+
+    this.fillPaint.setColor(Skia.Color('rgba(15, 23, 42, 0.92)'));
+    canvas.drawRect(Skia.XYWHRect(barX, barY - 12, barW, 10), this.fillPaint);
+    this.strokePaint.setStrokeWidth(1);
+    this.strokePaint.setColor(Skia.Color(coreColor));
+    canvas.drawRect(Skia.XYWHRect(barX, barY - 12, barW, 10), this.strokePaint);
+
+    if (pixelFont) {
+      this.fillPaint.setColor(Skia.Color('#000000'));
+      canvas.drawText(phaseText, barX + 3, barY - 4, this.fillPaint, pixelFont);
+      this.fillPaint.setColor(Skia.Color('#ffffff'));
+      canvas.drawText(phaseText, barX + 2, barY - 5, this.fillPaint, pixelFont);
+    }
+
+    this.fillPaint.setColor(Skia.Color('#090d16'));
+    canvas.drawRect(Skia.XYWHRect(barX - 1, barY - 1, barW + 2, barH + 2), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#450a0a'));
+    canvas.drawRect(Skia.XYWHRect(barX, barY, barW, barH), this.fillPaint);
+
+    const fillW = Math.max(0, Math.round((curHp / maxHp) * barW));
+    this.fillPaint.setColor(Skia.Color(coreColor));
+    canvas.drawRect(Skia.XYWHRect(barX, barY, fillW, barH), this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('rgba(255, 255, 255, 0.45)'));
+    canvas.drawRect(Skia.XYWHRect(barX, barY, fillW, 2), this.fillPaint);
+
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawRect(Skia.XYWHRect(barX + Math.round(barW * 0.33), barY, 1.5, barH), this.fillPaint);
+    canvas.drawRect(Skia.XYWHRect(barX + Math.round(barW * 0.66), barY, 1.5, barH), this.fillPaint);
+
+    this.strokePaint.setStrokeWidth(1.2);
+    this.strokePaint.setColor(Skia.Color('#facc15'));
+    canvas.drawRect(Skia.XYWHRect(barX - 1, barY - 1, barW + 2, barH + 2), this.strokePaint);
+
+    // 8. Stunned / Vulnerable Overlay
+    if ((en.stunTimer ?? 0) > 0) {
+      const starY = by - 36;
+      for (let i = 0; i < 4; i++) {
+        const a = frame * 0.18 + (i * Math.PI) / 2;
+        const sx = cx + Math.cos(a) * 26;
+        const sy = starY + Math.sin(a) * 8;
+        this.fillPaint.setColor(Skia.Color('#facc15'));
+        canvas.drawRect(Skia.XYWHRect(sx - 3, sy - 3, 6, 6), this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#ffffff'));
+        canvas.drawRect(Skia.XYWHRect(sx - 1.5, sy - 1.5, 3, 3), this.fillPaint);
+      }
+
+      const vW = 76;
+      const vH = 11;
+      const vX = bx + (w - vW) / 2;
+      const vY = starY - 14;
+      this.fillPaint.setColor(Skia.Color('rgba(220, 38, 38, 0.95)'));
+      canvas.drawRect(Skia.XYWHRect(vX, vY, vW, vH), this.fillPaint);
+      this.strokePaint.setStrokeWidth(1.5);
+      this.strokePaint.setColor(Skia.Color('#facc15'));
+      canvas.drawRect(Skia.XYWHRect(vX, vY, vW, vH), this.strokePaint);
+
+      if (pixelFont) {
+        this.fillPaint.setColor(Skia.Color('#ffffff'));
+        canvas.drawText('¡VULNERABLE!', vX + 5, vY + 9, this.fillPaint, pixelFont);
+      }
+    }
+  }
+
+  private drawOdysseyMiniMap(
+    canvas: SkCanvas,
+    world: WorldState,
+    viewportWorldW: number,
+    pixelFont?: SkFont | null
+  ): void {
+    if (world.partition !== 'odyssey') return;
+
+    const mapW = 96;
+    const mapH = 44;
+    const mapX = viewportWorldW - 108;
+    const mapY = 44;
+
+    // 1. Semitransparent dark card with cyan border
+    this.fillPaint.setColor(Skia.Color('rgba(6, 9, 19, 0.82)'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(mapX, mapY, mapW, mapH), 5, 5), this.fillPaint);
+
+    this.strokePaint.setStrokeWidth(1.5);
+    this.strokePaint.setColor(Skia.Color('rgba(6, 182, 212, 0.75)'));
+    canvas.drawRRect(Skia.RRectXY(Skia.XYWHRect(mapX, mapY, mapW, mapH), 5, 5), this.strokePaint);
+
+    // 2. Subtle internal grid lines
+    this.strokePaint.setStrokeWidth(0.8);
+    this.strokePaint.setColor(Skia.Color('rgba(30, 41, 59, 0.5)'));
+    canvas.drawLine(
+      mapX + 2,
+      mapY + mapH / 2,
+      mapX + mapW - 2,
+      mapY + mapH / 2,
+      this.strokePaint
+    );
+    canvas.drawLine(
+      mapX + mapW / 2,
+      mapY + 2,
+      mapX + mapW / 2,
+      mapY + mapH - 2,
+      this.strokePaint
+    );
+
+    // Scaling helpers
+    const pad = 4;
+    const ix = mapX + pad;
+    const iy = mapY + pad;
+    const iw = mapW - pad * 2;
+    const ih = mapH - pad * 2;
+
+    const totalWorldW = Math.max(1, world.totalCols * TILE);
+    const totalWorldH = Math.max(1, (world.worldRows ?? 15) * TILE);
+
+    const toRx = (wx: number) => ix + Math.max(0, Math.min(iw, (wx / totalWorldW) * iw));
+    const toRy = (wy: number) => iy + Math.max(0, Math.min(ih, (wy / totalWorldH) * ih));
+
+    // 3. Grapple Anchors (tiny cyan dots)
+    if (world.grappleAnchors && world.grappleAnchors.length > 0) {
+      this.fillPaint.setColor(Skia.Color('rgba(34, 211, 238, 0.6)'));
+      for (const a of world.grappleAnchors) {
+        canvas.drawRect(Skia.XYWHRect(toRx(a.x) - 0.75, toRy(a.y) - 0.75, 1.5, 1.5), this.fillPaint);
+      }
+    }
+
+    // 4. Flagpole / Goal Goalpost
+    if (world.flagpole) {
+      const fx = toRx(world.flagpole.x);
+      const fy = toRy(world.flagpole.y);
+      const goalUnlocked = Boolean(world.goalSealBroken) || !isGoalLocked(world);
+
+      if (goalUnlocked) {
+        const gFlash = Math.floor(world.frameCount / 6) % 2 === 0;
+        this.fillPaint.setColor(Skia.Color(gFlash ? '#facc15' : '#ffffff'));
+        canvas.drawCircle(fx, fy, 2.5, this.fillPaint);
+        this.strokePaint.setStrokeWidth(1);
+        this.strokePaint.setColor(Skia.Color('#fef08a'));
+        canvas.drawCircle(fx, fy, 4.5, this.strokePaint);
+      } else {
+        this.fillPaint.setColor(Skia.Color('#64748b'));
+        canvas.drawCircle(fx, fy, 2, this.fillPaint);
+      }
+    }
+
+    // 5. Combat Targets (Core Crystals & Titan Boss)
+    for (const en of world.enemies) {
+      if (en.state === 'knocked' || en.hp <= 0) continue;
+      if (en.brawlRole === 'core_crystal') {
+        const ex = toRx(en.x + en.width / 2);
+        const ey = toRy(en.y + en.height / 2);
+        const pulse = Math.sin(world.frameCount * 0.2 + en.id) * 0.8;
+        this.fillPaint.setColor(Skia.Color('rgba(217, 70, 239, 0.45)'));
+        canvas.drawCircle(ex, ey, 3.5 + pulse, this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#f472b6'));
+        canvas.drawCircle(ex, ey, 2, this.fillPaint);
+      } else if (en.brawlRole === 'titan_boss') {
+        const ex = toRx(en.x + en.width / 2);
+        const ey = toRy(en.y + en.height / 2);
+        const pulse = Math.sin(world.frameCount * 0.25) * 1.5;
+        this.fillPaint.setColor(Skia.Color('rgba(239, 68, 68, 0.5)'));
+        canvas.drawCircle(ex, ey, 5 + pulse, this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#f97316'));
+        canvas.drawCircle(ex, ey, 3, this.fillPaint);
+        this.fillPaint.setColor(Skia.Color('#ffffff'));
+        canvas.drawCircle(ex, ey, 1.2, this.fillPaint);
+      }
+    }
+
+    // 6. Player (Bright green/white dot with radar ping)
+    const p = world.player;
+    const px = toRx(p.x + p.width / 2);
+    const py = toRy(p.y + p.height / 2);
+
+    const ping = (world.frameCount % 45) / 45;
+    this.strokePaint.setStrokeWidth(1);
+    this.strokePaint.setColor(Skia.Color(`rgba(74, 222, 128, ${(1 - ping) * 0.7})`));
+    canvas.drawCircle(px, py, 2 + ping * 7, this.strokePaint);
+
+    this.fillPaint.setColor(Skia.Color('#4ade80'));
+    canvas.drawCircle(px, py, 2.5, this.fillPaint);
+    this.fillPaint.setColor(Skia.Color('#ffffff'));
+    canvas.drawCircle(px, py, 1.2, this.fillPaint);
+
+    // 7. Mini-Radar Header Label
+    if (pixelFont) {
+      this.fillPaint.setColor(Skia.Color('rgba(34, 211, 238, 0.85)'));
+      canvas.drawText('RADAR', mapX + 5, mapY + 8, this.fillPaint, pixelFont);
+    }
   }
 }

@@ -166,6 +166,7 @@ for (const [part, total] of ALL_MODES) {
     tower: 'reach',
     flip: 'core_breaker',
     star_road: 'reach',
+    odyssey: 'core_breaker',
   };
   const firstObjective = objectiveForStage(part, 0);
   assert(

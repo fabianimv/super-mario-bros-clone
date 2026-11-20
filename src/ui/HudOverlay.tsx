@@ -30,6 +30,10 @@ export interface HudSnapshot {
   arenaWave?: { current: number; total: number } | null;
   furyMeter?: number;
   furyTimer?: number;
+  odysseyMode?: 'citadel_grapple' | 'chrono_canyon' | 'titan_crater';
+  jetpackFuel?: number;
+  chronoTimer?: number;
+  mechaSuit?: boolean;
 }
 
 interface Props {
@@ -121,6 +125,8 @@ export const HudOverlay: React.FC<Props> = ({ hud, pixelFontLoaded, onPausePress
               ? 'TEMPLO'
               : hud.partition === 'star_road'
               ? 'SENDA'
+              : hud.partition === 'odyssey'
+              ? 'ODISEA'
               : 'MUNDO'}
           </Text>
           <Text style={[styles.statValue, { fontFamily }]}>{hud.worldLabel}</Text>
@@ -339,12 +345,63 @@ export const HudOverlay: React.FC<Props> = ({ hud, pixelFontLoaded, onPausePress
             </Text>
           </View>
         )}
+
+        {(hud.odysseyMode === 'chrono_canyon' || hud.odysseyMode === 'titan_crater') &&
+          hud.jetpackFuel != null && (
+            <View
+              style={[
+                styles.jetpackPill,
+                hud.jetpackFuel < 20 && styles.jetpackPillLow,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.powerPillText,
+                  {
+                    fontFamily,
+                    color: hud.jetpackFuel < 20 ? '#fca5a5' : '#a5f3fc',
+                  },
+                ]}
+              >
+                {`🚀 ${Math.round(hud.jetpackFuel)}%`}
+              </Text>
+              <View style={styles.jetpackTrack}>
+                <View
+                  style={[
+                    styles.jetpackFill,
+                    {
+                      width: `${Math.max(0, Math.min(100, hud.jetpackFuel))}%`,
+                      backgroundColor: hud.jetpackFuel < 20 ? '#ef4444' : '#06b6d4',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
+
+        {(hud.chronoTimer ?? 0) > 0 && (
+          <View style={[styles.powerPill, styles.chronoPill]}>
+            <Text style={[styles.powerPillText, { fontFamily, color: '#f5d0fe' }]}>
+              ⏳ ¡CRONO!
+            </Text>
+          </View>
+        )}
+
+        {hud.mechaSuit && (
+          <View style={[styles.powerPill, styles.mechaPill]}>
+            <Text style={[styles.powerPillText, { fontFamily, color: '#fef08a' }]}>
+              🤖 MECHA
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.rightCluster} pointerEvents="box-none">
         {hud.bossHp !== null && hud.bossMaxHp !== null && hud.bossHp > 0 && (
           <View pointerEvents="none" style={styles.bossBarBox}>
-            <Text style={[styles.bossLabel, { fontFamily }]}>REY KOOPA</Text>
+            <Text style={[styles.bossLabel, { fontFamily }]}>
+              {hud.odysseyMode === 'titan_crater' ? 'MECHA-TITÁN REX' : 'REY KOOPA'}
+            </Text>
             <View style={styles.bossTrack}>
               <View
                 style={[
@@ -504,6 +561,40 @@ const styles = StyleSheet.create({
   furyFill: {
     height: '100%',
     borderRadius: 1.5,
+  },
+  jetpackPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#38bdf8',
+    backgroundColor: 'rgba(8, 51, 68, 0.9)',
+    alignItems: 'center',
+    gap: 2,
+    minWidth: 58,
+  },
+  jetpackPillLow: {
+    borderColor: '#ef4444',
+    backgroundColor: 'rgba(69, 10, 10, 0.9)',
+  },
+  jetpackTrack: {
+    width: '100%',
+    height: 3,
+    backgroundColor: 'rgba(2, 6, 23, 0.8)',
+    borderRadius: 1.5,
+    overflow: 'hidden',
+  },
+  jetpackFill: {
+    height: '100%',
+    borderRadius: 1.5,
+  },
+  chronoPill: {
+    backgroundColor: 'rgba(88, 28, 135, 0.92)',
+    borderColor: '#d8b4fe',
+  },
+  mechaPill: {
+    backgroundColor: 'rgba(153, 27, 27, 0.92)',
+    borderColor: '#facc15',
   },
   rightCluster: {
     flexDirection: 'row',

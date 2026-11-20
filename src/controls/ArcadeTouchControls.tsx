@@ -18,6 +18,7 @@ interface Props {
   mountedYoshi: boolean;
   controlScale: number;
   visible: boolean;
+  odysseyMode?: 'citadel_grapple' | 'chrono_canyon' | 'titan_crater';
 }
 
 interface VisualPressed {
@@ -49,6 +50,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
   mountedYoshi,
   controlScale,
   visible,
+  odysseyMode,
 }) => {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -310,11 +312,27 @@ export const ArcadeTouchControls: React.FC<Props> = ({
   const armThick = Math.round(36 * controlScale);
   const armLen = Math.round((dpadSize - armThick) / 2 - 5);
 
+  const aLabel =
+    odysseyMode === 'chrono_canyon' || odysseyMode === 'titan_crater'
+      ? 'JET'
+      : powerState === 3
+      ? 'VOLAR'
+      : 'SALTAR';
+
   const xLabel = mountedYoshi
     ? 'LENGUA'
+    : odysseyMode === 'titan_crater'
+    ? 'PLASMA'
     : 'COMBO';
+
   const yLabel = mountedYoshi
     ? 'LENGUA'
+    : odysseyMode === 'citadel_grapple'
+    ? 'GANCHO'
+    : odysseyMode === 'chrono_canyon'
+    ? 'CRONO'
+    : odysseyMode === 'titan_crater'
+    ? 'ESCUDO'
     : partition === 'flip'
     ? 'GRAV'
     : 'PARRY';
@@ -411,7 +429,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         ]}
       />
 
-      {/* Y Button: Parry / Gravity Flip / Yoshi Tongue */}
+      {/* Y Button: Parry / Gravity Flip / Yoshi Tongue / Odyssey Mechanix */}
       <View
         pointerEvents="none"
         style={[
@@ -420,6 +438,12 @@ export const ArcadeTouchControls: React.FC<Props> = ({
             ? styles.spinBtnYoshi
             : partition === 'flip'
             ? styles.spinBtnFlip
+            : odysseyMode === 'citadel_grapple'
+            ? styles.spinBtnGrapple
+            : odysseyMode === 'chrono_canyon'
+            ? styles.spinBtnChrono
+            : odysseyMode === 'titan_crater'
+            ? styles.spinBtnTitan
             : styles.spinBtnSmw,
           pressed.spin && styles.btnDepressed,
           {
@@ -435,12 +459,12 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         <Text style={styles.btnSubLabel}>{yLabel}</Text>
       </View>
 
-      {/* X Button: Melee Combo / Fireball / Cape Whip / Yoshi Tongue */}
+      {/* X Button: Melee Combo / Fireball / Cape Whip / Yoshi Tongue / Mecha Plasma */}
       <View
         pointerEvents="none"
         style={[
           styles.fireBtn,
-          styles.fireBtnArmed,
+          odysseyMode === 'titan_crater' ? styles.fireBtnPlasma : styles.fireBtnArmed,
           pressed.fire && styles.btnDepressed,
           {
             width: auxRadius * 2,
@@ -474,7 +498,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         <Text style={styles.btnSubDark}>CORRER</Text>
       </View>
 
-      {/* A Button: Jump / Cape Parachute */}
+      {/* A Button: Jump / Cape Parachute / Jetpack */}
       <View
         pointerEvents="none"
         style={[
@@ -490,7 +514,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         ]}
       >
         <Text style={styles.btnLetterLight}>A</Text>
-        <Text style={styles.btnSubLight}>{powerState === 3 ? 'VOLAR' : 'SALTAR'}</Text>
+        <Text style={styles.btnSubLight}>{aLabel}</Text>
       </View>
     </View>
   );
@@ -600,6 +624,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(168, 85, 247, 0.85)',
     borderColor: '#e9d5ff',
   },
+  spinBtnGrapple: {
+    backgroundColor: 'rgba(6, 182, 212, 0.86)',
+    borderColor: '#a5f3fc',
+  },
+  spinBtnChrono: {
+    backgroundColor: 'rgba(99, 102, 241, 0.86)',
+    borderColor: '#c7d2fe',
+  },
+  spinBtnTitan: {
+    backgroundColor: 'rgba(217, 119, 6, 0.86)',
+    borderColor: '#fde68a',
+  },
   fireBtn: {
     position: 'absolute',
     alignItems: 'center',
@@ -609,6 +645,10 @@ const styles = StyleSheet.create({
   fireBtnArmed: {
     backgroundColor: 'rgba(37, 99, 235, 0.86)',
     borderColor: '#fde047',
+  },
+  fireBtnPlasma: {
+    backgroundColor: 'rgba(14, 165, 233, 0.88)',
+    borderColor: '#a5f3fc',
   },
   fireBtnDim: {
     backgroundColor: 'rgba(51, 65, 85, 0.65)',

@@ -201,6 +201,10 @@ export const GameView: React.FC = () => {
     bossMaxHp: null,
     furyMeter: 0,
     furyTimer: 0,
+    odysseyMode: undefined,
+    jetpackFuel: undefined,
+    chronoTimer: undefined,
+    mechaSuit: undefined,
   });
 
   // Lock iPhone 12 into full-screen Landscape immediately on launch
@@ -372,9 +376,20 @@ export const GameView: React.FC = () => {
           void saveProgress(updatedProg);
         }
 
+        const titanBoss = activeWorld.enemies.find(
+          (en) => en.brawlRole === 'titan_boss' && en.hp > 0
+        );
         const bossHp =
-          activeWorld.boss && !activeWorld.boss.defeated ? activeWorld.boss.hp : null;
-        const bossMaxHp = activeWorld.boss ? activeWorld.boss.maxHp : null;
+          activeWorld.boss && !activeWorld.boss.defeated
+            ? activeWorld.boss.hp
+            : titanBoss
+            ? titanBoss.hp
+            : null;
+        const bossMaxHp = activeWorld.boss
+          ? activeWorld.boss.maxHp
+          : titanBoss
+          ? titanBoss.maxHp ?? 18
+          : null;
         const starActive = activeWorld.player.starTimer > 0;
         const pBucket = Math.floor(activeWorld.player.pMeter / 10);
         const yoshiFireReady = activeWorld.player.yoshiMouthItem === 'fire';
@@ -383,7 +398,11 @@ export const GameView: React.FC = () => {
           : '';
         const furyBucket = Math.floor((activeWorld.player.furyMeter ?? 0) / 5);
         const furyTimerActive = (activeWorld.player.furyTimer ?? 0) > 0 ? 1 : 0;
-        const hudKey = `${activeWorld.partition}|${activeWorld.status}|${activeWorld.score}|${activeWorld.coins}|${activeWorld.dragonCoinsCollected}|${activeWorld.worldLabel}|${activeWorld.timeLeft}|${activeWorld.lives}|${activeWorld.player.powerState}|${starActive}|${pBucket}|${activeWorld.player.mountedYoshi}|${yoshiFireReady}|${bossHp}|${activeWorld.gemsCollected ?? 0}|${activeWorld.objective ?? ''}|${activeWorld.hasKey ? 1 : 0}|${activeWorld.cameraMode ?? 'side'}|${activeWorld.gravityDir ?? 1}|${activeWorld.onOffState ?? ''}|${activeWorld.subArea ?? ''}|${arenaWaveKey}|${furyBucket}|${furyTimerActive}`;
+        const jetpackFuelBucket = Math.floor((activeWorld.player.jetpackFuel ?? 0) / 5);
+        const chronoActive = (activeWorld.player.chronoTimer ?? 0) > 0 ? 1 : 0;
+        const mechaActive = activeWorld.player.mechaSuit ? 1 : 0;
+        const odysseyMode = activeWorld.odysseyMode ?? '';
+        const hudKey = `${activeWorld.partition}|${activeWorld.status}|${activeWorld.score}|${activeWorld.coins}|${activeWorld.dragonCoinsCollected}|${activeWorld.worldLabel}|${activeWorld.timeLeft}|${activeWorld.lives}|${activeWorld.player.powerState}|${starActive}|${pBucket}|${activeWorld.player.mountedYoshi}|${yoshiFireReady}|${bossHp}|${activeWorld.gemsCollected ?? 0}|${activeWorld.objective ?? ''}|${activeWorld.hasKey ? 1 : 0}|${activeWorld.cameraMode ?? 'side'}|${activeWorld.gravityDir ?? 1}|${activeWorld.onOffState ?? ''}|${activeWorld.subArea ?? ''}|${arenaWaveKey}|${furyBucket}|${furyTimerActive}|${odysseyMode}|${jetpackFuelBucket}|${chronoActive}|${mechaActive}`;
         if (hudKey !== lastHudKey) {
           lastHudKey = hudKey;
           setUiStatus(activeWorld.status);
@@ -415,6 +434,10 @@ export const GameView: React.FC = () => {
               : null,
             furyMeter: activeWorld.player.furyMeter ?? 0,
             furyTimer: activeWorld.player.furyTimer ?? 0,
+            odysseyMode: activeWorld.odysseyMode,
+            jetpackFuel: activeWorld.player.jetpackFuel,
+            chronoTimer: activeWorld.player.chronoTimer,
+            mechaSuit: activeWorld.player.mechaSuit,
           });
         }
       }
@@ -631,6 +654,7 @@ export const GameView: React.FC = () => {
         mountedYoshi={hud.mountedYoshi}
         controlScale={settings.controlScale}
         visible={showControls}
+        odysseyMode={hud.odysseyMode}
       />
 
       {/* Dual-Cartridge Title Screen over Live Attract-Mode Demo */}

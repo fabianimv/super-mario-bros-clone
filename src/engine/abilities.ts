@@ -116,16 +116,47 @@ export function triggerGroundPound(world: WorldState, events?: GameEvent[]): boo
 }
 
 /**
- * Activa el escudo de Parry / Contraataque perfecto durante 14 frames.
+ * Activa el escudo de Parry / Contraataque perfecto durante 14 frames (o duración personalizada).
  */
-export function triggerParry(world: WorldState, events?: GameEvent[]): boolean {
+export function triggerParry(world: WorldState, events?: GameEvent[], duration: number = PARRY_WINDOW_FRAMES): boolean {
   const p = world.player;
   if ((p.parryCooldown ?? 0) > 0) return false;
-  p.parryTimer = PARRY_WINDOW_FRAMES;
+  p.parryTimer = duration;
   p.parryCooldown = PARRY_COOLDOWN_FRAMES;
   if (events) {
     events.push({ type: 'sfx', id: 'bump' });
     events.push({ type: 'haptic', kind: 'light' });
+  }
+  return true;
+}
+
+/**
+ * Lanza un Rayo de Plasma de alta velocidad para la Armadura Mecha-Plomero (O-3).
+ */
+export function launchPlasmaBeam(world: WorldState, events?: GameEvent[]): boolean {
+  const p = world.player;
+  world.wrench = {
+    x: p.facing === 1 ? p.x + p.width : p.x - 24,
+    y: p.y + Math.min(10, p.height / 3),
+    width: 24,
+    height: 20,
+    vx: p.facing * 11,
+    vy: 0,
+    dir: p.facing === 1 ? 1 : -1,
+    phase: 'out',
+    travelled: 0,
+    timer: 0,
+    spin: 0,
+    carryId: null,
+    hitBoss: false,
+    dmg: 2,
+    fury: true,
+    piercing: true,
+  };
+  p.throwPoseTimer = 10;
+  if (events) {
+    events.push({ type: 'sfx', id: 'fireball' });
+    events.push({ type: 'haptic', kind: 'heavy' });
   }
   return true;
 }
@@ -190,6 +221,20 @@ export function stepBrawlTimers(world: WorldState): void {
     if (p.furyTimer === 0) {
       p.furyMeter = 0;
     }
+  }
+  // Odisea Abierta: Crono-Tiempo (Tiempo Bala) y Enfriamiento
+  if ((p.chronoTimer ?? 0) > 0) {
+    p.chronoTimer! -= 1;
+    if (p.chronoTimer === 0) {
+      world.timeScale = 1.0;
+    } else {
+      world.timeScale = 0.30;
+    }
+  } else if (world.timeScale !== undefined && world.timeScale !== 1.0 && (p.chronoTimer ?? 0) <= 0) {
+    world.timeScale = 1.0;
+  }
+  if ((p.chronoCooldown ?? 0) > 0) {
+    p.chronoCooldown! -= 1;
   }
   if (world.arenaGoTimer && world.arenaGoTimer > 0) {
     world.arenaGoTimer -= 1;
@@ -334,6 +379,10 @@ export function updateWrench(world: WorldState, events: GameEvent[], cb: WrenchC
     if (en.state === 'squashed' || en.state === 'knocked' || !en.active) continue;
     if (en.type === 'piranha' && en.y > en.baseY + en.height - 6) continue;
     if (hit(w, en)) {
+      const hitIds: number[] = ((w as any).hitEnemyIds = (w as any).hitEnemyIds ?? []);
+      if (hitIds.includes(en.id)) continue;
+      hitIds.push(en.id);
+
       if (w.dmg && en.hp) {
         en.hp = Math.max(0, en.hp - w.dmg);
       }

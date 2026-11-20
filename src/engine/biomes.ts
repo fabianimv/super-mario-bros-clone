@@ -144,6 +144,47 @@ export const STAR_ROAD_WORLD_NAMES = [
   'Ω • CORREDOR CÓSMICO',
 ];
 
+// Odisea Abierta (3 mundos abiertos gigantes)
+export const ODYSSEY_TOTAL_LEVELS = 3;
+export const ODYSSEY_STAGE_CODES = ['O-1', 'O-2', 'O-3'];
+export const ODYSSEY_STAGE_NAMES = [
+  'CIUDADELA DEL GANCHO',
+  'CAÑÓN DEL TIEMPO',
+  'CRÁTER DEL TITÁN',
+];
+
+export interface StageMeta {
+  code: string;
+  name: string;
+  biome: BiomeId;
+  bgm: BgmTrackId;
+  isBoss?: boolean;
+}
+
+export const ODYSSEY_METAS: StageMeta[] = [
+  {
+    code: 'O-1',
+    name: 'CIUDADELA DEL GANCHO',
+    biome: 'clockwork',
+    bgm: 'exp_overworld',
+    isBoss: false,
+  },
+  {
+    code: 'O-2',
+    name: 'CAÑÓN DEL TIEMPO',
+    biome: 'aurora',
+    bgm: 'dim_theme',
+    isBoss: false,
+  },
+  {
+    code: 'O-3',
+    name: 'CRÁTER DEL TITÁN',
+    biome: 'ember',
+    bgm: 'dim_core',
+    isBoss: true,
+  },
+];
+
 /** Cantidad de niveles de cada modo. */
 export function partitionTotalLevels(partition: GamePartition): number {
   switch (partition) {
@@ -167,6 +208,8 @@ export function partitionTotalLevels(partition: GamePartition): number {
       return FLIP_TOTAL_LEVELS;
     case 'star_road':
       return STAR_ROAD_TOTAL_LEVELS;
+    case 'odyssey':
+      return ODYSSEY_TOTAL_LEVELS;
     default:
       return TOTAL_LEVELS;
   }
@@ -1021,12 +1064,41 @@ export function getWorldLabel(levelIndex: number, partition: GamePartition = 'cl
     const prefix = STAR_ROAD_WORLD_PREFIXES[Math.min(STAR_ROAD_WORLD_PREFIXES.length - 1, worldNum - 1)] ?? '★';
     return `${prefix}-${stageNum}`;
   }
+  if (partition === 'odyssey') {
+    const clamped = Math.max(0, Math.min(ODYSSEY_STAGE_CODES.length - 1, levelIndex));
+    return ODYSSEY_STAGE_CODES[clamped] ?? 'O-1';
+  }
   return `${worldNum}-${stageNum}`;
+}
+
+export function getStageMeta(levelIndex: number, partition: GamePartition = 'classic'): StageMeta {
+  if (partition === 'odyssey') {
+    const clamped = Math.max(0, Math.min(ODYSSEY_METAS.length - 1, levelIndex));
+    return ODYSSEY_METAS[clamped];
+  }
+  const code = getWorldLabel(levelIndex, partition);
+  const biome = getStageBiome(levelIndex, partition);
+  const bgm = BIOMES[biome]?.bgm ?? 'overworld';
+  const stageNum = (levelIndex % STAGES_PER_WORLD) + 1;
+  const isBoss = stageNum === 4;
+  return {
+    code,
+    name: code,
+    biome,
+    bgm,
+    isBoss,
+  };
 }
 
 export function getStageBiome(levelIndex: number, partition: GamePartition = 'classic'): BiomeId {
   const worldNum = Math.floor(levelIndex / STAGES_PER_WORLD) + 1;
   const stageNum = (levelIndex % STAGES_PER_WORLD) + 1;
+
+  if (partition === 'odyssey') {
+    if (levelIndex === 0) return 'clockwork';
+    if (levelIndex === 1) return 'aurora';
+    return 'ember';
+  }
 
   if (partition === 'tower') {
     if (stageNum === 4) return 'fortress';

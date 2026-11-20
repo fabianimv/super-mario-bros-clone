@@ -39,6 +39,7 @@ import {
   triggerGroundPound,
   triggerParry,
   addFury,
+  launchPlasmaBeam,
 } from './abilities';
 import { buildWorldState, gridKey } from '../levels/levelBuilder';
 import type {
@@ -47,6 +48,7 @@ import type {
   EnemyType,
   FortressBoss,
   GameEvent,
+  GrappleAnchor,
   InputState,
   MovingPlatform,
   PowerupKind,
@@ -528,13 +530,13 @@ function knockEnemy(
   const isStunned = (en.stunTimer ?? 0) > 0;
   const isPiercing = Boolean(world.wrench?.piercing);
 
-  if (en.shieldFront && isFromFront && !isFury && !isStunned && !isPiercing) {
+  if (en.shieldFront && isFromFront && !isFury && !isStunned && (en.brawlRole === 'titan_boss' || !isPiercing)) {
     en.x += (en.facing ?? 1) * -4;
     spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#94a3b8', 6);
     events.push({ type: 'sfx', id: 'bump' });
     events.push({ type: 'haptic', kind: 'rigid' });
     spawnText(world, en.x, en.y - 12, '¡BLOQUEADO!', '#94a3b8');
-    if (world.wrench && !world.wrench.piercing) {
+    if (world.wrench) {
       world.wrench.phase = 'back';
     }
     return;
@@ -551,6 +553,10 @@ function knockEnemy(
   }
 
   if ((en.hp ?? 0) <= 0) {
+    if (en.brawlRole === 'titan_boss') {
+      handleTitanDefeat(world, en, events);
+      return;
+    }
     (en as any).alive = false;
     en.state = 'knocked';
     en.vy = -7.8;
@@ -794,8 +800,9 @@ function executeGroundPoundImpact(
     }
   }
 
-  // Onda Sísmica (radio = 4.5 * TILE = 144 px)
-  const radius = 4.5 * TILE;
+  // Onda Sísmica (radio = 4.5 * TILE = 144 px, ampliado a 5.5 * TILE = 176 px en Mecha)
+  const isMecha = p.mechaSuit === true || world.odysseyMode === 'titan_crater';
+  const radius = (isMecha ? 5.5 : 4.5) * TILE;
   const shockX = p.shockwaveX;
   const shockY = p.shockwaveY;
 
@@ -808,16 +815,25 @@ function executeGroundPoundImpact(
       en.stunTimer = 110;
       en.vy = -5.5 * gDir;
       const isCore = en.brawlRole === 'core_crystal';
-      const dmg = isDirect || isCore ? 3 : 2;
+      const isTitan = en.brawlRole === 'titan_boss';
+      const dmg = isMecha && isTitan ? 3 : (isDirect || isCore ? 3 : 2);
       en.hp = (en.hp ?? 1) - dmg;
-      spawnText(world, en.x, en.y - 12, `-${dmg} HP ¡SISMO!`, '#fbbf24');
+      spawnText(world, en.x, en.y - 12, `-${dmg} HP ¡SISMO!`, isTitan ? '#38bdf8' : '#fbbf24');
       spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 8);
 
       if (en.hp <= 0) {
+        if (isTitan) {
+          handleTitanDefeat(world, en, events);
+          continue;
+        }
         (en as any).alive = false;
         en.state = 'knocked';
         en.vy = -7.5 * gDir;
         addScore(world, isCore ? 2000 : 500);
+        if (isCore) {
+          spawnText(world, en.x, en.y - 14, '💥 ¡GENERADOR DESTRUIDO! +2000', '#38bdf8');
+          world.screenShake = Math.max(world.screenShake, 8);
+        }
         if (en.brawlRole === 'dojo_master') {
           if (world.risingHazardY !== undefined && world.risingHazardY !== null) {
             world.risingHazardY += 6 * TILE;
@@ -863,6 +879,10 @@ function stepMeleeCombat(world: WorldState, events: GameEvent[]): void {
     if (!overlaps(meleeHitbox, en)) continue;
 
     p.meleeHitIds.push(en.id);
+
+    if (world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater') {
+      p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 40);
+    }
 
     const isFromFront =
       (en.vx < 0 && p.x < en.x) ||
@@ -918,6 +938,10 @@ function stepMeleeCombat(world: WorldState, events: GameEvent[]): void {
     spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 6);
 
     if (en.hp <= 0) {
+      if (en.brawlRole === 'titan_boss') {
+        handleTitanDefeat(world, en, events);
+        continue;
+      }
       if (!en.launchedByPlayer) {
         (en as any).alive = false;
         en.state = 'knocked';
@@ -1097,6 +1121,336 @@ function stepEchoAttack(world: WorldState, events: GameEvent[]): void {
       }
     }
   }
+}
+
+// ============================================================================
+// ODISEA ABIERTA: JEFE COLOSAL (MECHA-TITÁN REX) Y GANCHO MAGNÉTICO
+// ============================================================================
+function handleTitanDefeat(world: WorldState, en: Enemy, events: GameEvent[]): void {
+  (en as any).alive = false;
+  en.state = 'knocked';
+  en.vy = -7.5;
+  en.vx = 0;
+  world.screenShake = 14;
+  addScore(world, 10000);
+  events.push({ type: 'sfx', id: 'treasure' });
+  events.push({ type: 'haptic', kind: 'heavy' });
+  spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#38bdf8', 24);
+  spawnBrickDebris(world, en.x + en.width / 2, en.y + en.height / 2);
+  spawnText(world, en.x, en.y - 20, '¡MECHA-TITÁN DESTRUIDO! +10000', '#38bdf8');
+  world.goalSealBroken = true;
+  if (!world.pickups) world.pickups = [];
+  const portal = world.pickups.find((pk) => pk.kind === 'portal');
+  if (portal) {
+    portal.collected = false;
+    portal.x = en.x + en.width / 2 - portal.width / 2;
+    portal.y = en.y + en.height - portal.height;
+  } else {
+    world.pickups.push({
+      id: world.nextEntityId++,
+      kind: 'portal',
+      x: en.x + en.width / 2 - 16,
+      y: en.y + en.height - 32,
+      width: 32,
+      height: 32,
+      collected: false,
+      phase: 0,
+    });
+  }
+}
+
+function stepTitanBoss(world: WorldState, en: Enemy, events: GameEvent[]): void {
+  if ((en.hp ?? 0) <= 0 || (en as any).alive === false) {
+    if (en.state !== 'knocked') {
+      handleTitanDefeat(world, en, events);
+    }
+    return;
+  }
+
+  const p = world.player;
+  const timeScale = world.timeScale ?? 1.0;
+
+  if (en.maxHp === undefined) en.maxHp = 18;
+  if (en.hp === undefined) en.hp = 18;
+  const phase: 1 | 2 | 3 = en.hp > 12 ? 1 : en.hp > 6 ? 2 : 3;
+  world.titanPhase = phase;
+
+  const activeGenerators = world.enemies.some(
+    (e) => e.brawlRole === 'core_crystal' && (e as any).alive !== false && e.state !== 'knocked' && (e.hp ?? 0) > 0
+  );
+  if (phase === 1) {
+    if (activeGenerators) {
+      if (en.shieldFront === undefined) en.shieldFront = true;
+    } else {
+      en.shieldFront = false;
+    }
+  } else {
+    en.shieldFront = false;
+  }
+
+  if ((en.stunTimer ?? 0) > 0) {
+    en.stunTimer! -= 1;
+    en.vx = 0;
+    if (world.frameCount % 10 === 0) {
+      spawnSparks(world, en.x + en.width / 2, en.y - 4, '#38bdf8', 1);
+    }
+    return;
+  }
+
+  en.stateTimer = (en.stateTimer ?? 0) + timeScale;
+
+  const craterMinX = 18 * TILE;
+  const craterMaxX = 48 * TILE;
+
+  if (phase === 1) {
+    // Fase 1: Patrulla el cráter central (cols 18..48) y cada 85 frames dispara 1 ráfaga de plasma hacia Plomero
+    const patrolSpeed = 1.6;
+    if (en.facing === 1) {
+      en.vx = patrolSpeed;
+      if (en.x + en.width >= craterMaxX) {
+        en.facing = -1;
+        en.vx = -patrolSpeed;
+      }
+    } else {
+      en.vx = -patrolSpeed;
+      if (en.x <= craterMinX) {
+        en.facing = 1;
+        en.vx = patrolSpeed;
+      }
+    }
+
+    if (en.stateTimer >= 85) {
+      en.stateTimer = 0;
+      const dir = p.x < en.x ? -1 : 1;
+      en.facing = dir;
+      world.bossFires.push({
+        x: dir === 1 ? en.x + en.width + 4 : en.x - 24,
+        y: en.y + en.height * 0.4,
+        targetY: p.y + p.height / 2,
+        vx: dir * 4.6,
+        width: 24,
+        height: 20,
+        animTimer: 0,
+      });
+      events.push({ type: 'sfx', id: 'fireball' });
+      events.push({ type: 'haptic', kind: 'medium' });
+      spawnText(world, en.x, en.y - 12, '💥 ¡DESCARGA DE PLASMA!', '#38bdf8');
+    }
+  } else if (phase === 2) {
+    // Fase 2: Más rápido; cada 110 frames da un gran salto sísmico (en.vy = -11) y dispara 2 proyectiles en abanico
+    const speed = 2.4;
+    const targetDir = p.x < en.x ? -1 : 1;
+    en.facing = targetDir;
+    en.vx = targetDir * speed;
+
+    if (en.x < craterMinX) en.x = craterMinX;
+    if (en.x + en.width > craterMaxX) en.x = craterMaxX - en.width;
+
+    if (en.stateTimer >= 110) {
+      en.stateTimer = 0;
+      en.vy = -11;
+      en.onGround = false;
+
+      const dir = en.facing;
+      const spreadOffsets = [-35, 35];
+      for (const off of spreadOffsets) {
+        world.bossFires.push({
+          x: dir === 1 ? en.x + en.width + 4 : en.x - 24,
+          y: en.y + en.height * 0.4,
+          targetY: p.y + p.height / 2 + off,
+          vx: dir * 5.2,
+          width: 24,
+          height: 20,
+          animTimer: 0,
+        });
+      }
+      world.screenShake = Math.max(world.screenShake, 7);
+      events.push({ type: 'sfx', id: 'boss_roar' });
+      events.push({ type: 'haptic', kind: 'heavy' });
+      spawnText(world, en.x, en.y - 14, '⚡ ¡SALTO SÍSMICO + DOBLE PLASMA!', '#f59e0b');
+    }
+  } else {
+    // Fase 3 (Overdrive): Embiste hacia Plomero y dispara 3 proyectiles en abanico cada 70 frames
+    const chargeSpeed = 3.6;
+    const chargeDir = p.x < en.x ? -1 : 1;
+    en.facing = chargeDir;
+    en.vx = chargeDir * chargeSpeed;
+
+    if (en.x < craterMinX - 2 * TILE) en.x = craterMinX - 2 * TILE;
+    if (en.x + en.width > craterMaxX + 2 * TILE) en.x = craterMaxX + 2 * TILE - en.width;
+
+    if (en.stateTimer >= 70) {
+      en.stateTimer = 0;
+      const spreadOffsets = [-50, 0, 50];
+      for (const off of spreadOffsets) {
+        world.bossFires.push({
+          x: chargeDir === 1 ? en.x + en.width + 4 : en.x - 24,
+          y: en.y + en.height * 0.4,
+          targetY: p.y + p.height / 2 + off,
+          vx: chargeDir * 5.8,
+          width: 24,
+          height: 20,
+          animTimer: 0,
+        });
+      }
+      world.screenShake = Math.max(world.screenShake, 9);
+      events.push({ type: 'sfx', id: 'boss_roar' });
+      events.push({ type: 'haptic', kind: 'rigid' });
+      spawnText(world, en.x, en.y - 16, '🔥 ¡OVERDRIVE TRIPLE PLASMA!', '#ef4444');
+    }
+  }
+}
+
+function tryEngageGrapple(world: WorldState, events: GameEvent[]): boolean {
+  const p = world.player;
+  const pcx = p.x + p.width / 2;
+  const pcy = p.y + p.height / 2;
+  let bestAnchor: GrappleAnchor | null = null;
+  let bestScore = Infinity;
+  let bestDist = 0;
+  const MAX_GRAPPLE_DIST = 9.5 * TILE; // 304 px
+
+  for (const a of world.grappleAnchors ?? []) {
+    const dx = a.x - pcx;
+    const dy = a.y - pcy;
+    const dist = Math.hypot(dx, dy);
+    if (dist <= MAX_GRAPPLE_DIST) {
+      let score = dist;
+      if (dy < 0) score -= 45; // prefer above
+      if (dx * p.facing > 0) score -= 35; // prefer ahead
+      if (score < bestScore) {
+        bestScore = score;
+        bestAnchor = a;
+        bestDist = dist;
+      }
+    }
+  }
+
+  if (bestAnchor) {
+    const dx = pcx - bestAnchor.x;
+    const dy = pcy - bestAnchor.y;
+    p.grappleAnchorId = bestAnchor.id;
+    p.grappleX = bestAnchor.x;
+    p.grappleY = bestAnchor.y;
+    p.grappleLen = Math.max(48, Math.min(280, bestDist));
+    p.grappleAngle = Math.atan2(dx, dy);
+    const tangVel = (p.vx * Math.cos(p.grappleAngle) - p.vy * Math.sin(p.grappleAngle)) / p.grappleLen;
+    p.grappleAngVel = Math.max(-0.08, Math.min(0.08, tangVel));
+    p.groundPounding = false;
+    events.push({ type: 'sfx', id: 'wrench_throw' });
+    events.push({ type: 'haptic', kind: 'medium' });
+    return true;
+  }
+  return false;
+}
+
+function releaseGrappleCatapult(world: WorldState, events: GameEvent[]): void {
+  const p = world.player;
+  const angle = p.grappleAngle ?? 0;
+  const angVel = p.grappleAngVel ?? 0;
+  const len = p.grappleLen ?? 100;
+  p.grappleAnchorId = null;
+
+  let launchVx = Math.cos(angle) * angVel * len * 1.35;
+  if (Math.abs(launchVx) < 1.5) {
+    launchVx = (p.facing || 1) * 5.2;
+  }
+  p.vx = Math.max(-10, Math.min(10, launchVx));
+  p.vy = -10.2;
+  p.onGround = false;
+  p.coyoteTimer = 0;
+  p.jumpBufferTimer = 0;
+  addFury(world, 15, events);
+  events.push({ type: 'sfx', id: 'spring' });
+  events.push({ type: 'haptic', kind: 'medium' });
+  for (let k = 0; k < 6; k++) {
+    world.particles.push({
+      x: p.x + p.width / 2,
+      y: p.y + p.height / 2,
+      vx: (Math.random() - 0.5) * 4,
+      vy: (Math.random() - 0.5) * 4,
+      gravity: 0.1,
+      size: 5,
+      color: '#38bdf8',
+      life: 16,
+      maxLife: 16,
+      kind: 'spark',
+    });
+  }
+}
+
+function updateGrappleSwing(
+  world: WorldState,
+  input: InputState,
+  events: GameEvent[]
+): void {
+  const p = world.player;
+  const anchor = world.grappleAnchors?.find((a) => a.id === p.grappleAnchorId) ?? {
+    id: p.grappleAnchorId!,
+    x: p.grappleX ?? p.x,
+    y: p.grappleY ?? p.y,
+  };
+
+  let angle = p.grappleAngle ?? 0;
+  let angVel = p.grappleAngVel ?? 0;
+  let len = p.grappleLen ?? 100;
+
+  // ▲/▼ recoge o suelta cuerda
+  const lenDelta = input.up ? -3.5 : input.down ? 3.5 : 0;
+  len = Math.max(48, Math.min(280, len + lenDelta));
+  p.grappleLen = len;
+
+  // Aceleración pendular + impulso de jugador ◀/▶
+  const gravAcc = -0.0085 * Math.sin(angle);
+  const pump = input.left ? -0.0042 : input.right ? 0.0042 : 0;
+  angVel = (angVel + gravAcc + pump) * 0.992;
+  angle += angVel;
+
+  if (angle < -1.45) {
+    angle = -1.45;
+    angVel = 0;
+  } else if (angle > 1.45) {
+    angle = 1.45;
+    angVel = 0;
+  }
+  p.grappleAngle = angle;
+  p.grappleAngVel = angVel;
+
+  if (angVel > 0.005) p.facing = 1;
+  else if (angVel < -0.005) p.facing = -1;
+
+  const targetX = anchor.x + Math.sin(angle) * len - p.width / 2;
+  const targetY = anchor.y + Math.cos(angle) * len - p.height / 2;
+
+  // Posiciona al jugador; si choca contra sólido, detiene balanceo o suelta gancho sin atascarse
+  const testBox: Rect = { x: targetX, y: targetY, width: p.width, height: p.height };
+  const solids = collectNearbySolids(world, testBox, false);
+  let collided = false;
+  for (const s of solids) {
+    if (s.block?.type === 'hidden') continue;
+    if (overlaps(testBox, s)) {
+      collided = true;
+      break;
+    }
+  }
+
+  if (collided) {
+    angVel = 0;
+    p.grappleAngVel = 0;
+    const currBox: Rect = { x: p.x, y: p.y, width: p.width, height: p.height };
+    if (solids.some((s) => s.block?.type !== 'hidden' && overlaps(currBox, s))) {
+      p.grappleAnchorId = null;
+      p.vy = 0;
+    }
+  } else {
+    p.x = targetX;
+    p.y = targetY;
+    p.vx = Math.cos(angle) * angVel * len;
+    p.vy = -Math.sin(angle) * angVel * len;
+  }
+
+  p.onGround = false;
+  p.groundPounding = false;
 }
 
 export function stepWorld(
@@ -1437,14 +1791,52 @@ export function stepWorld(
   const spinTriggered = input.spin && !world.prevSpinHeld;
   world.prevSpinHeld = input.spin;
 
-  // Combo Melee 1-2-3 (Botón X)
-  if (fireTriggered && !p.dead) {
-    triggerMeleeCombo(world, events, input.up);
+  // Auto-init Mecha Suit en titan_crater
+  if (world.odysseyMode === 'titan_crater' && p.mechaSuit === undefined) {
+    p.mechaSuit = true;
   }
 
-  // Parry / Contraataque Perfecto (Botón Y)
+  // Combo Melee 1-2-3 (Botón X) y Rayo de Plasma Mecha
+  if (fireTriggered && !p.dead) {
+    triggerMeleeCombo(world, events, input.up);
+    if (p.mechaSuit || world.odysseyMode === 'titan_crater') {
+      launchPlasmaBeam(world, events);
+    }
+  }
+
+  // Botón Y: Gancho Magnético / Chrono-Time / Mecha-Reflector / Parry
   if (spinTriggered) {
-    triggerParry(world, events);
+    if (p.grappleAnchorId != null) {
+      releaseGrappleCatapult(world, events);
+    } else if (world.odysseyMode === 'citadel_grapple') {
+      const hooked = tryEngageGrapple(world, events);
+      if (!hooked) {
+        triggerParry(world, events);
+      }
+    } else if (world.odysseyMode === 'chrono_canyon') {
+      if ((p.chronoCooldown ?? 0) <= 0 && (p.chronoTimer ?? 0) <= 0) {
+        p.chronoTimer = 240;
+        p.chronoCooldown = 300;
+        world.timeScale = 0.30;
+        triggerParry(world, events);
+        events.push({ type: 'sfx', id: 'clock' });
+        events.push({ type: 'haptic', kind: 'rigid' });
+        world.floatingTexts.push({
+          x: p.x - 24,
+          y: p.y - 20,
+          text: '⏱ ¡CHRONO-TIME! (0.30x)',
+          color: '#38bdf8',
+          life: 90,
+          maxLife: 90,
+        });
+      } else {
+        triggerParry(world, events);
+      }
+    } else if (p.mechaSuit || world.odysseyMode === 'titan_crater') {
+      triggerParry(world, events, 18);
+    } else {
+      triggerParry(world, events);
+    }
   }
 
   // Inverted Gravity Flip via Y button in flip mode (when gravityDir is defined)
@@ -1519,7 +1911,7 @@ export function stepWorld(
       bounces: 0,
       animFrame: 0,
     });
-  } else if (fireTriggered && !p.mountedYoshi && p.powerState <= 1) {
+  } else if (fireTriggered && !p.mountedYoshi && p.powerState <= 1 && !p.mechaSuit && world.odysseyMode !== 'titan_crater') {
     // Llave inglesa a media distancia (si no hay objetivo en rango melee)
     const mx = p.facing > 0 ? p.x + p.width - 4 : p.x - 38;
     const my = p.y - 4;
@@ -1650,6 +2042,24 @@ export function stepWorld(
     }
   }
 
+  // =========================================================================
+  // GANCHO MAGNÉTICO O FÍSICAS DE MOVIMIENTO ESTÁNDAR
+  // =========================================================================
+  const gDir = world.gravityDir ?? 1;
+  let prevY = p.y;
+
+  // Catapulta con tecla de Salto (A) si está colgado
+  const wantsJumpGrapple = input.jump && !world.prevJumpHeld;
+  if (p.grappleAnchorId != null && wantsJumpGrapple) {
+    releaseGrappleCatapult(world, events);
+    world.prevJumpHeld = input.jump;
+  }
+
+  const isGrappling = p.grappleAnchorId != null;
+  if (isGrappling) {
+    updateGrappleSwing(world, input, events);
+    prevY = p.y;
+  } else {
   // =========================================================================
   // 1. HORIZONTAL MOVEMENT, SPRINT, P-METER & CAPE SWOOP AERODYNAMICS
   // =========================================================================
@@ -1830,8 +2240,6 @@ export function stepWorld(
     p.jumpBufferTimer -= 1;
   }
 
-  const gDir = world.gravityDir ?? 1;
-
   // Salto en pared (Fase 4): rebota hacia el lado contrario
   const wallJumpDir = p.wallDir || ((p.wallCoyote ?? 0) > 0 ? p.lastWallDir ?? 0 : 0);
   if (jumpJustPressed && !p.onGround && p.coyoteTimer <= 0 && wallJumpDir) {
@@ -1950,6 +2358,46 @@ export function stepWorld(
     p.vy = Math.max(p.vy - gravity, -maxFallSpeed);
   }
 
+  // Jetpack Propulsor (chrono_canyon / titan_crater)
+  const hasJetpack = world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater';
+  if (hasJetpack) {
+    if (p.jetpackFuel === undefined) {
+      p.jetpackFuel = 100;
+      p.jetpackMaxFuel = 100;
+    }
+    if (p.onGround) {
+      p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 100) + 3.5);
+      p.jetpackActive = false;
+    } else if (
+      input.jump &&
+      !p.groundPounding &&
+      (p.jetpackFuel ?? 0) > 2 &&
+      p.vy > -1.5
+    ) {
+      p.jetpackActive = true;
+      p.vy = Math.max(p.vy - 0.85, -5.2);
+      p.jetpackFuel = Math.max(0, p.jetpackFuel - 1.6);
+      world.particles.push({
+        x: p.x + p.width / 2 + (Math.random() - 0.5) * 6,
+        y: p.y + p.height - 2,
+        vx: (Math.random() - 0.5) * 1.5 - p.vx * 0.15,
+        vy: Math.random() * 2.5 + 2.0,
+        gravity: 0.05,
+        size: 5,
+        color: Math.random() > 0.4 ? '#06b6d4' : '#38bdf8',
+        life: 14,
+        maxLife: 14,
+        kind: 'spark',
+      });
+      if (world.frameCount % 10 === 0) {
+        events.push({ type: 'sfx', id: 'wind_gust' });
+        events.push({ type: 'haptic', kind: 'light' });
+      }
+    } else {
+      p.jetpackActive = false;
+    }
+  }
+
   // Deslizarse por la pared: cae lento
   if (p.wallDir) {
     if (gDir === 1 && p.vy > WALL_SLIDE_SPEED) p.vy = WALL_SLIDE_SPEED;
@@ -1974,7 +2422,7 @@ export function stepWorld(
     }
   }
 
-  const prevY = p.y;
+  prevY = p.y;
   p.y += p.vy;
   p.onGround = false;
 
@@ -2024,6 +2472,10 @@ export function stepWorld(
         p.y = s.y - p.height;
         p.vy = 0;
         p.onGround = true;
+        if (hasJetpack) {
+          p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 100) + 3.5);
+          p.jetpackActive = false;
+        }
         if (p.groundPounding) {
           executeGroundPoundImpact(world, events);
         }
@@ -2071,6 +2523,10 @@ export function stepWorld(
         p.y = s.y + s.height;
         p.vy = 0;
         p.onGround = true;
+        if (hasJetpack) {
+          p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 100) + 3.5);
+          p.jetpackActive = false;
+        }
         if (p.groundPounding) {
           executeGroundPoundImpact(world, events);
         }
@@ -2114,6 +2570,7 @@ export function stepWorld(
   if (p.groundPounding && p.onGround) {
     executeGroundPoundImpact(world, events);
   }
+  } // Fin del bloque normal de movimiento si !isGrappling
 
   // Walk animation clock
   if (p.onGround && Math.abs(p.vx) > 0.2) {
@@ -2171,25 +2628,30 @@ export function stepWorld(
   // =========================================================================
   // BIDIRECTIONAL SAFE-ZONE CAMERA (Guarantees ZERO D-Pad or Button Occlusion!)
   // =========================================================================
-  const minCam = MIN_CAMERA_WORLD_X; // -224 keeps col 0 well to the right of the left D-Pad!
-  const maxCam = Math.max(minCam, (world.totalCols + 6) * TILE - viewportWorldWidth);
+  const isOdyssey = world.partition === 'odyssey';
+  const minCam = isOdyssey ? 0 : MIN_CAMERA_WORLD_X; // -224 keeps col 0 well to the right of the left D-Pad!
+  const maxCam = Math.max(minCam, (isOdyssey ? world.totalCols * TILE : (world.totalCols + 6) * TILE) - viewportWorldWidth);
   const lookAhead = p.facing === 1 ? 36 : -28;
-  const desiredCam = p.x + lookAhead - viewportWorldWidth * 0.4;
-  let nextCam = world.cameraX + (desiredCam - world.cameraX) * 0.22;
+  const desiredCam = isOdyssey
+    ? p.x + p.width / 2 - viewportWorldWidth / 2
+    : p.x + lookAhead - viewportWorldWidth * 0.4;
+  let nextCam = world.cameraX + (desiredCam - world.cameraX) * (isOdyssey ? 0.18 : 0.22);
 
   // Enforce strict left/right safe margins so Plomero NEVER enters control zones!
-  const leftSafeMargin = Math.min(220, viewportWorldWidth * 0.28);
-  const rightSafeMargin = Math.min(244, viewportWorldWidth * 0.31);
-  if (p.x - nextCam < leftSafeMargin) {
-    nextCam = p.x - leftSafeMargin;
-  } else if (p.x + p.width - nextCam > viewportWorldWidth - rightSafeMargin) {
-    nextCam = p.x + p.width + rightSafeMargin - viewportWorldWidth;
+  if (!isOdyssey) {
+    const leftSafeMargin = Math.min(220, viewportWorldWidth * 0.28);
+    const rightSafeMargin = Math.min(244, viewportWorldWidth * 0.31);
+    if (p.x - nextCam < leftSafeMargin) {
+      nextCam = p.x - leftSafeMargin;
+    } else if (p.x + p.width - nextCam > viewportWorldWidth - rightSafeMargin) {
+      nextCam = p.x + p.width + rightSafeMargin - viewportWorldWidth;
+    }
   }
   world.cameraX = Math.max(minCam, Math.min(maxCam, nextCam));
 
-  // Dynamic Camera Y in vertical/tall worlds (Tower, Flip)
-  if (worldRows > WORLD_ROWS) {
-    const maxCamY = worldRows * TILE - LOGICAL_HEIGHT;
+  // Dynamic Camera Y in vertical/tall worlds (Tower, Flip, Odyssey)
+  if (worldRows > WORLD_ROWS || isOdyssey) {
+    const maxCamY = Math.max(0, (world.worldRows ?? 15) * TILE - LOGICAL_HEIGHT);
     const targetCamY = Math.max(0, Math.min(maxCamY, p.y + p.height / 2 - LOGICAL_HEIGHT / 2));
     const currentCamY = world.cameraY ?? 0;
     world.cameraY = currentCamY + (targetCamY - currentCamY) * 0.18;
@@ -2604,10 +3066,12 @@ export function stepWorld(
       continue;
     }
 
+    const timeScale = world.timeScale ?? 1.0;
+
     if (en.state === 'knocked') {
-      en.x += en.vx;
-      en.vy += 0.48;
-      en.y += en.vy;
+      en.x += en.vx * timeScale;
+      en.vy += 0.48 * timeScale;
+      en.y += en.vy * timeScale;
       if (en.y > ((world.worldRows ?? WORLD_ROWS) * TILE) + 64) world.enemies.splice(i, 1);
       continue;
     }
@@ -2634,6 +3098,67 @@ export function stepWorld(
       continue;
     }
 
+    // Mecha-Titán Rex (titan_boss): Jefe Colosal 3 Fases en Odisea (O-3)
+    if (en.brawlRole === 'titan_boss') {
+      stepTitanBoss(world, en, events);
+      const tScale = world.timeScale ?? 1.0;
+      en.vy = Math.min(en.vy + 0.46 * tScale, 10.5);
+      en.x += en.vx * tScale;
+      en.y += en.vy * tScale;
+      en.onGround = false;
+
+      const bossSolids = collectNearbySolids(world, en, false);
+      for (const s of bossSolids) {
+        if (overlaps(en, s)) {
+          if (en.vy > 0 && en.y + en.height - en.vy <= s.y + 16) {
+            en.y = s.y - en.height;
+            en.onGround = true;
+            en.vy = 0;
+          }
+        }
+      }
+
+      // Colisión Plomero vs Titán
+      if (overlaps(p, en)) {
+        if ((p.parryTimer ?? 0) > 0) {
+          p.invulnTimer = Math.max(p.invulnTimer, 18);
+          p.parryFlashTimer = 14;
+          world.screenShake = Math.max(world.screenShake, 8);
+          addFury(world, 35, events);
+          if (world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater') {
+            p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 40);
+          }
+          en.stunTimer = 120;
+          en.shieldFront = false;
+          events.push({ type: 'sfx', id: 'bump' });
+          events.push({ type: 'haptic', kind: 'rigid' });
+          spawnText(world, en.x, en.y - 14, '⚡ ¡PARRY! TITÁN ATURDIDO', '#38bdf8');
+          spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#38bdf8', 12);
+        } else if (p.starTimer > 0) {
+          en.hp = (en.hp ?? 1) - 2;
+          spawnText(world, en.x, en.y - 14, '¡ESTRELLA -2 HP!', '#fde047');
+          if (en.hp <= 0) handleTitanDefeat(world, en, events);
+        } else if (prevY + p.height <= en.y + 24 && p.vy > 0) {
+          p.vy = -10.6;
+          events.push({ type: 'sfx', id: 'stomp' });
+          events.push({ type: 'haptic', kind: 'medium' });
+          if (world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater') {
+            p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 40);
+          }
+          if (en.shieldFront) {
+            spawnText(world, en.x, en.y - 12, '¡ESCUDO ACTIVO! REFLEJA PLASMA', '#94a3b8');
+          } else {
+            en.hp = (en.hp ?? 1) - 2;
+            spawnText(world, en.x, en.y - 12, '-2 HP ¡PISOTÓN!', '#38bdf8');
+            if (en.hp <= 0) handleTitanDefeat(world, en, events);
+          }
+        } else {
+          damagePlayer(world, events);
+        }
+      }
+      continue;
+    }
+
     // Aturdimiento: inmóvil mientras stunTimer > 0
     const isStunned = (en.stunTimer ?? 0) > 0;
     if (isStunned) {
@@ -2646,7 +3171,7 @@ export function stepWorld(
 
     // Bullet Bill: flies straight through air ignoring gravity & blocks!
     if (en.type === 'bullet_bill') {
-      en.x += en.vx;
+      en.x += en.vx * timeScale;
       en.facing = en.vx >= 0 ? 1 : -1;
       if (overlaps(p, en)) {
         // Parry a Bala Bill: refleja como proyectil hacia adelante
@@ -2659,6 +3184,9 @@ export function stepWorld(
           p.parryFlashTimer = 14;
           world.screenShake = Math.max(world.screenShake, 7);
           addFury(world, 35, events);
+          if (world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater') {
+            p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 40);
+          }
           events.push({ type: 'sfx', id: 'kick' });
           events.push({ type: 'haptic', kind: 'heavy' });
           spawnText(world, p.x, p.y - 18, '⚡ ¡PARRY BALA BILL!', '#fde047');
@@ -2667,9 +3195,20 @@ export function stepWorld(
         }
 
         const stomping = p.vy > 0 && prevY + p.height <= en.y + 18;
-        if (p.starTimer > 0 || stomping || p.spinJumping || p.mountedYoshi) {
+        if ((world.timeScale ?? 1.0) < 0.5 && stomping) {
+          p.vy = -10.5;
+          p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 45);
+          spawnText(world, p.x, p.y - 14, '⚡ ¡ESCALÓN TEMPORAL!', '#38bdf8');
+          events.push({ type: 'sfx', id: 'spring' });
+          events.push({ type: 'haptic', kind: 'rigid' });
+          knockEnemy(world, en, p.stompCombo, events);
+          p.stompCombo += 1;
+        } else if (p.starTimer > 0 || stomping || p.spinJumping || p.mountedYoshi) {
           if (stomping || p.spinJumping || p.mountedYoshi) {
             p.vy = input.jump ? -10.6 : -8.2;
+          }
+          if (world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater') {
+            p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 40);
           }
           knockEnemy(world, en, p.stompCombo, events);
           p.stompCombo += 1;
@@ -2685,7 +3224,7 @@ export function stepWorld(
 
     // Piranha Plant vertical pipe cycle
     if (en.type === 'piranha') {
-      en.stateTimer = (en.stateTimer + 1) % 200;
+      en.stateTimer = (en.stateTimer + timeScale) % 200;
       const hiddenY = en.baseY + en.height + 6;
       const playerNearPipe = Math.abs(p.x + p.width / 2 - (en.x + en.width / 2)) < 48;
 
@@ -2694,12 +3233,12 @@ export function stepWorld(
           en.stateTimer = 0;
           en.y = hiddenY;
         } else {
-          en.y = Math.max(en.baseY, en.y - 1.25);
+          en.y = Math.max(en.baseY, en.y - 1.25 * timeScale);
         }
       } else if (en.stateTimer < 105) {
         en.y = en.baseY;
       } else if (en.stateTimer < 150) {
-        en.y = Math.min(hiddenY, en.y + 1.25);
+        en.y = Math.min(hiddenY, en.y + 1.25 * timeScale);
       } else {
         en.y = hiddenY;
       }
@@ -2725,11 +3264,11 @@ export function stepWorld(
 
     // Chargin' Chuck AI: faces Plomero, sprints to tackle & periodically leaps!
     if (!isStunned && en.type === 'chuck' && !en.brawlRole) {
-      en.stateTimer += 1;
+      en.stateTimer += timeScale;
       const targetDir = p.x < en.x ? -1 : 1;
-      en.vx += targetDir * 0.09;
+      en.vx += targetDir * 0.09 * timeScale;
       en.vx = Math.max(-2.6, Math.min(2.6, en.vx));
-      if (en.onGround && en.stateTimer % 85 === 0) {
+      if (en.onGround && Math.floor(en.stateTimer) % 85 === 0) {
         en.vy = -7.8;
         en.onGround = false;
       }
@@ -2742,10 +3281,10 @@ export function stepWorld(
         const targetDir = p.x < en.x ? -1 : 1;
         en.facing = targetDir;
         if (en.brawlRole === 'bounty_commander') {
-          en.stateTimer = (en.stateTimer ?? 0) + 1;
-          if (en.onGround && en.stateTimer % 90 < 30) {
+          en.stateTimer = (en.stateTimer ?? 0) + timeScale;
+          if (en.onGround && Math.floor(en.stateTimer) % 90 < 30) {
             en.vx = -targetDir * 2.2;
-            if (en.stateTimer % 90 === 0) {
+            if (Math.floor(en.stateTimer) % 90 === 0) {
               en.vy = -7.5;
               en.onGround = false;
             }
@@ -2754,8 +3293,8 @@ export function stepWorld(
           }
         } else {
           en.vx = targetDir * 1.85;
-          en.stateTimer = (en.stateTimer ?? 0) + 1;
-          if (en.onGround && en.stateTimer % 75 === 0) {
+          en.stateTimer = (en.stateTimer ?? 0) + timeScale;
+          if (en.onGround && Math.floor(en.stateTimer) % 75 === 0) {
             en.vy = -6.5;
             en.onGround = false;
           }
@@ -2768,12 +3307,12 @@ export function stepWorld(
       const targetDir = p.x < en.x ? -1 : 1;
       en.facing = targetDir;
       en.vx = targetDir * 2.6;
-      en.stateTimer = (en.stateTimer ?? 0) + 1;
-      if (en.onGround && (p.y < en.y - 16 || (Math.abs(p.x - en.x) < 3 * TILE && en.stateTimer % 60 === 0))) {
+      en.stateTimer = (en.stateTimer ?? 0) + timeScale;
+      if (en.onGround && (p.y < en.y - 16 || (Math.abs(p.x - en.x) < 3 * TILE && Math.floor(en.stateTimer) % 60 === 0))) {
         en.vy = -9.8;
         en.onGround = false;
       }
-      if (en.stateTimer % 90 === 0) {
+      if (Math.floor(en.stateTimer) % 90 === 0) {
         world.bossFires.push({
           x: en.facing === 1 ? en.x + en.width + 4 : en.x - 28,
           y: en.y + 10,
@@ -2790,7 +3329,7 @@ export function stepWorld(
 
     // Idle Koopa Shell wake-up countdown
     if (en.state === 'shell_idle' || en.state === 'shell_wake') {
-      en.stateTimer += 1;
+      en.stateTimer += timeScale;
       if (en.stateTimer > 240) {
         en.state = 'shell_wake';
       }
@@ -2805,7 +3344,7 @@ export function stepWorld(
     }
 
     const isShellSlide = en.state === 'shell_slide';
-    en.vy = Math.min(en.vy + (en.type === 'paratroopa' ? 0.3 : 0.46), 10.5);
+    en.vy = Math.min(en.vy + (en.type === 'paratroopa' ? 0.3 : 0.46) * timeScale, 10.5);
 
     const isGroundEnemy =
       en.type === 'koopa_red' ||
@@ -2846,7 +3385,7 @@ export function stepWorld(
       }
     }
 
-    en.x += en.vx;
+    en.x += en.vx * timeScale;
     if (en.vx !== 0) en.facing = en.vx > 0 ? 1 : -1;
 
     const enSolidsX = collectNearbySolids(world, en, false);
@@ -2865,7 +3404,7 @@ export function stepWorld(
       }
     }
 
-    en.y += en.vy;
+    en.y += en.vy * timeScale;
     en.onGround = false;
     const enSolidsY = collectNearbySolids(world, en, false);
     for (const s of enSolidsY) {
@@ -2925,6 +3464,9 @@ export function stepWorld(
         p.parryFlashTimer = 14;
         world.screenShake = Math.max(world.screenShake, 7);
         addFury(world, 35, events);
+        if (world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater') {
+          p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 40);
+        }
         en.stunTimer = 120;
         en.shieldFront = false;
         en.x += p.facing * 24;
@@ -2961,6 +3503,9 @@ export function stepWorld(
       const safeSpinyBounce = p.spinJumping || p.mountedYoshi;
 
       if (stomping && (en.type !== 'spiny' || safeSpinyBounce)) {
+        if (world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater') {
+          p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 40);
+        }
         p.vy = input.jump ? -10.4 : -8.0;
         p.airJumpsLeft = world.doubleJumpAssist ? 1 : 0;
         events.push({ type: 'sfx', id: safeSpinyBounce ? 'spin_jump' : 'stomp' });
@@ -3031,7 +3576,10 @@ export function stepWorld(
       }
     }
 
-    if (en.y > ((world.worldRows ?? WORLD_ROWS) * TILE) + 64 || en.x < world.cameraX - 320) {
+    if (
+      en.y > ((world.worldRows ?? WORLD_ROWS) * TILE) + 64 ||
+      (en.x < world.cameraX - 320 && world.partition !== 'odyssey')
+    ) {
       world.enemies.splice(i, 1);
     }
   }
@@ -3321,24 +3869,32 @@ export function stepWorld(
 
   for (let i = world.bossFires.length - 1; i >= 0; i--) {
     const bf = world.bossFires[i];
+    const bfScale = (bf as any).reflected ? 1.0 : (world.timeScale ?? 1.0);
     bf.animTimer += 1;
-    bf.x += bf.vx;
+    bf.x += bf.vx * bfScale;
     if (Math.abs(bf.y - bf.targetY) > 1.5) {
-      bf.y += bf.y < bf.targetY ? 1.4 : -1.4;
+      bf.y += (bf.y < bf.targetY ? 1.4 : -1.4) * bfScale;
     }
     if (overlaps(p, bf)) {
       if ((p.parryTimer ?? 0) > 0) {
-        bf.vx = -bf.vx * 1.8;
-        bf.targetY = world.boss ? world.boss.y + 18 : bf.y;
+        const isMecha = p.mechaSuit === true || world.odysseyMode === 'titan_crater';
+        const mult = isMecha ? 2.0 : 1.8;
+        bf.vx = -bf.vx * mult;
+        const titan = world.enemies.find((e) => e.brawlRole === 'titan_boss' && (e.hp ?? 0) > 0);
+        bf.targetY = titan ? titan.y + titan.height * 0.4 : (world.boss ? world.boss.y + 18 : bf.y);
         (bf as any).reflected = true;
+        (bf as any).mechaReflected = isMecha;
         p.invulnTimer = Math.max(p.invulnTimer, 18);
         p.parryFlashTimer = 14;
         world.screenShake = Math.max(world.screenShake, 7);
         addFury(world, 35, events);
+        if (world.odysseyMode === 'chrono_canyon' || world.odysseyMode === 'titan_crater') {
+          p.jetpackFuel = Math.min(100, (p.jetpackFuel ?? 0) + 40);
+        }
         events.push({ type: 'sfx', id: 'bump' });
         events.push({ type: 'haptic', kind: 'rigid' });
-        spawnText(world, p.x, p.y - 18, '⚡ ¡PARRY FUEGO!', '#fde047');
-        spawnSparks(world, p.x + p.width / 2, p.y + p.height / 2, '#fde047', 10);
+        spawnText(world, p.x, p.y - 18, isMecha ? '⚡ ¡REFLEJO MECHA 2.0x!' : '⚡ ¡PARRY FUEGO!', '#38bdf8');
+        spawnSparks(world, p.x + p.width / 2, p.y + p.height / 2, '#38bdf8', 10);
         continue;
       }
       if (p.spinJumping && p.vy > 0) {
@@ -3359,19 +3915,34 @@ export function stepWorld(
           (en.hp ?? 1) > 0 &&
           overlaps(bf, en)
         ) {
-          en.hp = (en.hp ?? 1) - 3;
-          spawnText(world, en.x, en.y - 10, '-3 HP', '#fde047');
-          spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 8);
+          const isTitan = en.brawlRole === 'titan_boss';
+          const isMecha = Boolean((bf as any).mechaReflected);
+          const dmg = isTitan && isMecha ? 4 : isTitan ? 3 : 3;
+          en.hp = (en.hp ?? 1) - dmg;
+          if (isTitan) {
+            en.shieldFront = false;
+            world.screenShake = Math.max(world.screenShake, 10);
+            spawnText(world, en.x, en.y - 14, `⚡ ¡PLASMA REFLEJADO -${dmg} HP! ¡ESCUDO ROTO!`, '#38bdf8');
+          } else {
+            spawnText(world, en.x, en.y - 10, `-${dmg} HP`, '#fde047');
+          }
+          spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#38bdf8', 12);
+          events.push({ type: 'sfx', id: 'kick' });
+          events.push({ type: 'haptic', kind: 'heavy' });
+          world.bossFires.splice(i, 1);
           if (en.hp <= 0) {
-            (en as any).alive = false;
-            en.state = 'knocked';
-            en.vy = -6.5;
-            if (en.brawlRole === 'dojo_master' && world.risingHazardY !== undefined && world.risingHazardY !== null) {
-              world.risingHazardY += 6 * TILE;
+            if (isTitan) {
+              handleTitanDefeat(world, en, events);
+            } else {
+              (en as any).alive = false;
+              en.state = 'knocked';
+              en.vy = -6.5;
             }
           }
+          break;
         }
       }
+      if (i >= world.bossFires.length) continue;
       if (world.boss && !world.boss.defeated && overlaps(bf, world.boss)) {
         damageBoss(world, world.boss, 3, '¡FUEGO REFLEJADO -3!', events);
         world.bossFires.splice(i, 1);

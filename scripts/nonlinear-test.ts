@@ -669,7 +669,7 @@ console.log('   - 12f. Verificando Solvabilidad Universal (24 niveles + 4 sub-sa
 
 // 1. Validar los 24 niveles no-lineales
 for (const part of NONLINEAR_PARTITIONS) {
-  for (let lvl = 0; lvl < 8; lvl++) {
+  for (let lvl = 0; lvl < partitionTotalLevels(part); lvl++) {
     const w = buildWorldState(lvl, undefined, part);
 
     // Cantidad mínima de bloques

@@ -41,6 +41,7 @@ import {
   buildFlipWorldState,
   buildStarRoadWorldState,
 } from './nonlinearBuilder';
+import { buildOdysseyStage } from './odysseyBuilder';
 import { buildClassicStage } from './classicBuilder';
 import { buildExpeditionOrFrontierStage } from './expeditionBuilder';
 import { buildFortuneStage } from './fortuneBuilder';
@@ -202,6 +203,9 @@ export function buildWorldState(
   }
   if (partition === 'star_road') {
     return buildStarRoadWorldState(levelIndex, carryState);
+  }
+  if (partition === 'odyssey') {
+    return buildOdysseyStage(levelIndex, carryState);
   }
 
   if (partition === 'smw') {

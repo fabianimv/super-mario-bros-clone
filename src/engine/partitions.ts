@@ -7,7 +7,7 @@ import { partitionTotalLevels } from './biomes';
 import type { GamePartition, SaveProgress } from './types';
 
 export const PARTITION_ORDER: GamePartition[] = ['classic', 'smw', 'expedition', 'frontier', 'fortune', 'mirage', 'echo', 'dimension'];
-export const NONLINEAR_PARTITIONS: GamePartition[] = ['tower', 'flip', 'star_road'];
+export const NONLINEAR_PARTITIONS: GamePartition[] = ['odyssey', 'tower', 'flip', 'star_road'];
 export const ALL_PARTITIONS: GamePartition[] = [...PARTITION_ORDER, ...NONLINEAR_PARTITIONS];
 
 export interface PartitionInfo {
@@ -170,6 +170,19 @@ export const PARTITION_INFO: Record<GamePartition, PartitionInfo> = {
     accent: '#eab308',
     subtitleColor: '#fef9c3',
   },
+  odyssey: {
+    title: 'ODISEA ABIERTA',
+    chip: '🌍 ODISEA',
+    tab: '🌍 ODISEA (3)',
+    edition: 'MUNDO ABIERTO • GANCHO, CRONO-JETPACK Y MECHA',
+    subtitle: 'ODISEA • 3 MUNDOS ABIERTOS',
+    worldsLabel: '3 MUNDOS ABIERTOS',
+    worldNoun: 'ODISEA',
+    firstStage: 'O-1',
+    hint: 'O-1: Gancho con Y  •  O-2: Jetpack (mantén A) + Tiempo Bala (Y)  •  O-3: Armadura Mecha',
+    accent: '#06b6d4',
+    subtitleColor: '#a5f3fc',
+  },
 };
 
 export interface PartitionProgress {
@@ -269,6 +282,15 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
       unlocked: prog.starRoadUnlockedLevel ?? 0,
       cleared: prog.starRoadClearedLevels ?? [],
       best: prog.starRoadBestStageScores ?? {},
+      total,
+    };
+  }
+  if (part === 'odyssey') {
+    return {
+      highScore: prog.odysseyHighScore ?? 0,
+      unlocked: Math.max(prog.odysseyUnlockedLevel ?? 3, 2),
+      cleared: prog.odysseyClearedLevels ?? [],
+      best: prog.odysseyBestStageScores ?? {},
       total,
     };
   }
@@ -374,6 +396,15 @@ export function withPartitionProgress(
       starRoadUnlockedLevel: next.unlocked,
       starRoadClearedLevels: next.cleared,
       starRoadBestStageScores: next.best,
+    };
+  }
+  if (part === 'odyssey') {
+    return {
+      ...prog,
+      odysseyHighScore: next.highScore,
+      odysseyUnlockedLevel: next.unlocked,
+      odysseyClearedLevels: next.cleared,
+      odysseyBestStageScores: next.best,
     };
   }
   return {
