@@ -34,6 +34,11 @@ import {
   throwWrench,
   updateShaftHints,
   updateWrench,
+  stepBrawlTimers,
+  triggerMeleeCombo,
+  triggerGroundPound,
+  triggerParry,
+  addFury,
 } from './abilities';
 import { buildWorldState, gridKey } from '../levels/levelBuilder';
 import type {
@@ -492,16 +497,83 @@ function knockEnemy(
   world: WorldState,
   en: Enemy,
   comboIdx: number,
-  events: GameEvent[]
+  events: GameEvent[],
+  dmg: number = 1
 ): void {
-  en.state = 'knocked';
-  en.vy = -7.8;
-  en.vx = en.vx >= 0 ? 2.2 : -2.2;
-  en.stateTimer = 60;
-  events.push({ type: 'sfx', id: 'kick' });
-  events.push({ type: 'haptic', kind: 'medium' });
-  awardCombo(world, comboIdx, en.x, en.y, events);
-  spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 6);
+  // Invencible con Estrella: K.O. instantáneo
+  if (world.player.starTimer > 0) {
+    en.shieldFront = false;
+    en.hp = 0;
+    (en as any).alive = false;
+    en.state = 'knocked';
+    en.vy = -7.8;
+    en.vx = en.vx >= 0 ? 2.2 : -2.2;
+    en.stateTimer = 60;
+    events.push({ type: 'sfx', id: 'kick' });
+    events.push({ type: 'haptic', kind: 'medium' });
+    awardCombo(world, comboIdx, en.x, en.y, events);
+    spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 6);
+    return;
+  }
+
+  // Escudo Frontal (en.shieldFront)
+  const p = world.player;
+  const isFromFront =
+    (en.vx < 0 && p.x < en.x) ||
+    (en.vx > 0 && p.x > en.x) ||
+    (en.facing === -1 && p.x < en.x) ||
+    (en.facing === 1 && p.x > en.x);
+
+  const isFury = (p.furyTimer ?? 0) > 0;
+  const isStunned = (en.stunTimer ?? 0) > 0;
+  const isPiercing = Boolean(world.wrench?.piercing);
+
+  if (en.shieldFront && isFromFront && !isFury && !isStunned && !isPiercing) {
+    en.x += (en.facing ?? 1) * -4;
+    spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#94a3b8', 6);
+    events.push({ type: 'sfx', id: 'bump' });
+    events.push({ type: 'haptic', kind: 'rigid' });
+    spawnText(world, en.x, en.y - 12, '¡BLOQUEADO!', '#94a3b8');
+    if (world.wrench && !world.wrench.piercing) {
+      world.wrench.phase = 'back';
+    }
+    return;
+  }
+
+  if (en.shieldFront) {
+    en.shieldFront = false;
+    spawnText(world, en.x, en.y - 12, '¡ESCUDO ROTO!', '#fbbf24');
+  }
+
+  if (dmg > 0) {
+    en.hp = (en.hp ?? 1) - dmg;
+    spawnText(world, en.x, en.y - 10, `-${dmg} HP`, isFury ? '#ef4444' : '#f59e0b');
+  }
+
+  if ((en.hp ?? 0) <= 0) {
+    (en as any).alive = false;
+    en.state = 'knocked';
+    en.vy = -7.8;
+    en.vx = en.vx >= 0 ? 2.2 : -2.2;
+    en.stateTimer = 60;
+    events.push({ type: 'sfx', id: 'kick' });
+    events.push({ type: 'haptic', kind: 'medium' });
+    awardCombo(world, comboIdx, en.x, en.y, events);
+    spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 6);
+
+    if (en.brawlRole === 'dojo_master') {
+      if (world.risingHazardY !== undefined && world.risingHazardY !== null) {
+        world.risingHazardY += 6 * TILE;
+      }
+      world.player.vy = -12 * (world.gravityDir ?? 1);
+      spawnText(world, world.player.x, world.player.y - 20, '¡SUPER IMPULSO!', '#f59e0b');
+    }
+  } else {
+    en.stunTimer = Math.max(en.stunTimer ?? 0, 45);
+    en.vy = -4.5;
+    spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 4);
+    events.push({ type: 'sfx', id: 'bump' });
+  }
 }
 
 function syncStandingHeight(world: WorldState): void {
@@ -522,7 +594,7 @@ function syncStandingHeight(world: WorldState): void {
 
 function damagePlayer(world: WorldState, events: GameEvent[]): void {
   const p = world.player;
-  if (p.invulnTimer > 0 || p.starTimer > 0 || p.dead) return;
+  if ((p.parryTimer ?? 0) > 0 || p.invulnTimer > 0 || p.starTimer > 0 || p.dead) return;
 
   // Authentic SMW Yoshi Shield: getting hit dismounts Yoshi into runaway panic instead of hurting Plomero!
   if (p.mountedYoshi) {
@@ -686,6 +758,344 @@ function advanceOrWinStage(world: WorldState, events: GameEvent[]): void {
   } else {
     world.status = 'victory';
     events.push({ type: 'bgm', track: null });
+  }
+}
+
+function executeGroundPoundImpact(
+  world: WorldState,
+  events: GameEvent[],
+  directTarget?: Enemy | FortressBoss
+): void {
+  const p = world.player;
+  const gDir = world.gravityDir ?? 1;
+  p.groundPounding = false;
+  p.shockwaveTimer = 18;
+  p.shockwaveX = p.x + p.width / 2;
+  p.shockwaveY = gDir === 1 ? p.y + p.height : p.y;
+  world.screenShake = Math.max(world.screenShake, 10);
+  events.push({ type: 'sfx', id: 'break_block' });
+  events.push({ type: 'haptic', kind: 'rigid' });
+
+  // Destruye bloques brick / rotating justo debajo (o encima en flip) de Plomero
+  const probeCols = [
+    Math.floor((p.x + 4) / TILE),
+    Math.floor((p.x + p.width - 4) / TILE),
+  ];
+  const targetRow = gDir === 1 ? Math.floor((p.y + p.height + 4) / TILE) : Math.floor((p.y - 4) / TILE);
+  for (const col of probeCols) {
+    const b = world.blockGrid.get(gridKey(col, targetRow));
+    if (b) {
+      if (b.type === 'brick') {
+        spawnBrickDebris(world, b.x, b.baseY);
+        removeBlock(world, b);
+      } else if (b.type === 'rotating') {
+        b.spinTimer = 240;
+      }
+    }
+  }
+
+  // Onda Sísmica (radio = 4.5 * TILE = 144 px)
+  const radius = 4.5 * TILE;
+  const shockX = p.shockwaveX;
+  const shockY = p.shockwaveY;
+
+  for (const en of world.enemies) {
+    if (!en.active || (en as any).alive === false || en.state === 'squashed' || en.state === 'knocked' || (en.hp ?? 1) <= 0) continue;
+    const isDirect = directTarget === en;
+    const dist = Math.hypot(en.x + en.width / 2 - shockX, en.y + en.height / 2 - shockY);
+    if (isDirect || dist <= radius) {
+      en.shieldFront = false;
+      en.stunTimer = 110;
+      en.vy = -5.5 * gDir;
+      const isCore = en.brawlRole === 'core_crystal';
+      const dmg = isDirect || isCore ? 3 : 2;
+      en.hp = (en.hp ?? 1) - dmg;
+      spawnText(world, en.x, en.y - 12, `-${dmg} HP ¡SISMO!`, '#fbbf24');
+      spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 8);
+
+      if (en.hp <= 0) {
+        (en as any).alive = false;
+        en.state = 'knocked';
+        en.vy = -7.5 * gDir;
+        addScore(world, isCore ? 2000 : 500);
+        if (en.brawlRole === 'dojo_master') {
+          if (world.risingHazardY !== undefined && world.risingHazardY !== null) {
+            world.risingHazardY += 6 * TILE;
+          }
+          p.vy = -12 * gDir;
+          spawnText(world, p.x, p.y - 20, '¡SUPER IMPULSO!', '#f59e0b');
+        }
+      }
+      addFury(world, 20, events);
+    }
+  }
+
+  if (world.boss && !world.boss.defeated) {
+    const boss = world.boss;
+    const isDirect = directTarget === boss;
+    const dist = Math.hypot(boss.x + boss.width / 2 - shockX, boss.y + boss.height / 2 - shockY);
+    if (isDirect || dist <= radius) {
+      const dmg = isDirect ? 3 : 2;
+      damageBoss(world, boss, dmg, `¡SISMO -${dmg}!`, events);
+      boss.phase = 'stunned';
+      boss.phaseTimer = 110;
+      addFury(world, 20, events);
+    }
+  }
+}
+
+function stepMeleeCombat(world: WorldState, events: GameEvent[]): void {
+  const p = world.player;
+  if ((p.meleeTimer ?? 0) <= 0) return;
+
+  const gDir = world.gravityDir ?? 1;
+  const mx = p.facing > 0 ? p.x + p.width - 4 : p.x - 38;
+  const my = p.y - 4;
+  const mw = 42;
+  const mh = p.height + 8;
+  const meleeHitbox: Rect = { x: mx, y: my, width: mw, height: mh };
+
+  p.meleeHitIds = p.meleeHitIds ?? [];
+
+  for (const en of world.enemies) {
+    if (!en.active || (en as any).alive === false || en.state === 'squashed' || en.state === 'knocked' || (en.hp ?? 1) <= 0) continue;
+    if (p.meleeHitIds.includes(en.id)) continue;
+    if (!overlaps(meleeHitbox, en)) continue;
+
+    p.meleeHitIds.push(en.id);
+
+    const isFromFront =
+      (en.vx < 0 && p.x < en.x) ||
+      (en.vx > 0 && p.x > en.x) ||
+      (en.facing === -1 && p.x < en.x) ||
+      (en.facing === 1 && p.x > en.x);
+
+    const isFury = (p.furyTimer ?? 0) > 0;
+    const isStunned = (en.stunTimer ?? 0) > 0;
+
+    if (en.shieldFront && isFromFront && !isFury && !isStunned) {
+      en.x += p.facing * 4;
+      spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#94a3b8', 6);
+      events.push({ type: 'sfx', id: 'bump' });
+      events.push({ type: 'haptic', kind: 'rigid' });
+      spawnText(world, en.x, en.y - 12, '¡BLOQUEADO!', '#94a3b8');
+      continue;
+    }
+
+    if (en.shieldFront) {
+      en.shieldFront = false;
+      spawnText(world, en.x, en.y - 12, '¡ESCUDO ROTO!', '#fbbf24');
+    }
+
+    const baseDmg = isFury ? 2 : 1;
+    const dmg = p.comboStep === 3 ? baseDmg + 1 : baseDmg;
+
+    if (p.comboStep === 1) {
+      en.stunTimer = 45;
+      en.x += p.facing * 12;
+      addFury(world, 15, events);
+      events.push({ type: 'sfx', id: 'bump' });
+      events.push({ type: 'haptic', kind: 'light' });
+    } else if (p.comboStep === 2) {
+      en.vy = -8.5 * gDir;
+      en.stunTimer = 60;
+      addFury(world, 20, events);
+      events.push({ type: 'sfx', id: 'kick' });
+      events.push({ type: 'haptic', kind: 'medium' });
+    } else if (p.comboStep === 3) {
+      en.vx = p.facing * 10.5;
+      en.knockbackVx = p.facing * 10.5;
+      en.launchedByPlayer = true;
+      en.stunTimer = 90;
+      world.screenShake = Math.max(world.screenShake, 8);
+      addFury(world, 25, events);
+      events.push({ type: 'sfx', id: 'kick' });
+      events.push({ type: 'haptic', kind: 'heavy' });
+    }
+
+    en.hp = (en.hp ?? 1) - dmg;
+    spawnText(world, en.x, en.y - 10, `-${dmg} HP`, isFury ? '#ef4444' : '#f59e0b');
+    spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 6);
+
+    if (en.hp <= 0) {
+      if (!en.launchedByPlayer) {
+        (en as any).alive = false;
+        en.state = 'knocked';
+        en.vy = -7.8 * gDir;
+        en.vx = p.facing * 3.5;
+      }
+      addScore(world, en.brawlRole === 'core_crystal' ? 2000 : 500);
+
+      if (en.brawlRole === 'dojo_master') {
+        if (world.risingHazardY !== undefined && world.risingHazardY !== null) {
+          world.risingHazardY += 6 * TILE;
+        }
+        p.vy = -12 * gDir;
+        spawnText(world, p.x, p.y - 20, '¡SUPER IMPULSO!', '#f59e0b');
+      }
+    }
+  }
+
+  if (world.boss && !world.boss.defeated && overlaps(meleeHitbox, world.boss)) {
+    const boss = world.boss;
+    if (boss.hurtFlashTimer <= 0) {
+      const dmg = (p.furyTimer ?? 0) > 0 ? 2 : 1;
+      damageBoss(world, boss, dmg, `¡GOLPE MELEE -${dmg}!`, events);
+      addFury(world, 20, events);
+      boss.hurtFlashTimer = 25;
+    }
+  }
+}
+
+function stepLaunchedEnemies(world: WorldState, viewportWorldWidth: number, events: GameEvent[]): void {
+  for (const en of world.enemies) {
+    if (!en.launchedByPlayer || en.state === 'squashed') continue;
+
+    en.vx = en.knockbackVx ?? en.facing * 10.5;
+    en.x += en.vx;
+
+    // Choca contra otros enemigos vivos
+    for (const other of world.enemies) {
+      if (
+        other !== en &&
+        other.active &&
+        (other as any).alive !== false &&
+        other.state !== 'squashed' &&
+        other.state !== 'knocked' &&
+        (other.hp ?? 1) > 0 &&
+        overlaps(en, other)
+      ) {
+        other.hp = (other.hp ?? 1) - 2;
+        spawnSparks(world, other.x + other.width / 2, other.y + other.height / 2, '#fde047', 6);
+        spawnText(world, other.x, other.y - 10, '-2 HP ¡IMPACTO!', '#f97316');
+        addScore(world, 500);
+        addFury(world, 12, events);
+        events.push({ type: 'sfx', id: 'kick' });
+        events.push({ type: 'haptic', kind: 'heavy' });
+
+        if (other.hp <= 0) {
+          (other as any).alive = false;
+          other.state = 'knocked';
+          other.vy = -7.2;
+          other.vx = en.vx * 0.6;
+          if (other.brawlRole === 'dojo_master' && world.risingHazardY !== undefined && world.risingHazardY !== null) {
+            world.risingHazardY += 6 * TILE;
+          }
+        }
+      }
+    }
+
+    // Choca contra el jefe
+    if (world.boss && !world.boss.defeated && overlaps(en, world.boss)) {
+      damageBoss(world, world.boss, 3, '¡IMPACTO PROYECTIL -3!', events);
+      en.launchedByPlayer = false;
+      if ((en.hp ?? 0) <= 0) {
+        (en as any).alive = false;
+        en.state = 'knocked';
+        en.vy = -6;
+      }
+    }
+
+    // Choca contra muros sólidos / bloques brick / core_crystal
+    const solids = collectNearbySolids(world, en, false);
+    for (const s of solids) {
+      if (overlaps(en, s)) {
+        if (s.block && (s.block.type === 'brick' || s.block.type === 'rotating')) {
+          triggerBlockHit(world, s.block, true, events);
+        }
+        en.launchedByPlayer = false;
+        world.screenShake = Math.max(world.screenShake, 6);
+        spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fb923c', 8);
+        events.push({ type: 'sfx', id: 'bump' });
+
+        if ((en.hp ?? 0) <= 0) {
+          (en as any).alive = false;
+          en.state = 'knocked';
+          en.vy = -6.5;
+          en.vx = -en.vx * 0.3;
+          spawnText(world, en.x, en.y - 12, '¡K.O.!', '#ef4444');
+        }
+        break;
+      }
+    }
+
+    // Choca contra core_crystal
+    for (const core of world.enemies) {
+      if (
+        core !== en &&
+        core.brawlRole === 'core_crystal' &&
+        core.active &&
+        (core as any).alive !== false &&
+        core.state !== 'knocked' &&
+        (core.hp ?? 1) > 0 &&
+        overlaps(en, core)
+      ) {
+        core.hp = (core.hp ?? 1) - 2;
+        spawnText(world, core.x, core.y - 10, '-2 HP', '#a855f7');
+        spawnSparks(world, core.x + core.width / 2, core.y + core.height / 2, '#c084fc', 8);
+        events.push({ type: 'sfx', id: 'break_block' });
+
+        if (core.hp <= 0) {
+          (core as any).alive = false;
+          core.state = 'knocked';
+          core.vy = -6;
+          addScore(world, 2000);
+        }
+        en.launchedByPlayer = false;
+        if ((en.hp ?? 0) <= 0) {
+          (en as any).alive = false;
+          en.state = 'knocked';
+          en.vy = -6;
+        }
+      }
+    }
+
+    if (en.x < world.cameraX - 120 || en.x > world.cameraX + viewportWorldWidth + 120) {
+      en.launchedByPlayer = false;
+      if ((en.hp ?? 0) <= 0) {
+        (en as any).alive = false;
+        en.state = 'knocked';
+      }
+    }
+  }
+}
+
+function stepEchoAttack(world: WorldState, events: GameEvent[]): void {
+  if ((world.echoAttackPulse ?? 0) <= 0) {
+    (world as any).echoAttackHitIds = undefined;
+    return;
+  }
+  if (world.echoAttackX === undefined || world.echoAttackY === undefined) return;
+
+  const ex = world.echoAttackX;
+  const ey = world.echoAttackY;
+  const radius = 48;
+  const hitIds: number[] = ((world as any).echoAttackHitIds = (world as any).echoAttackHitIds || []);
+
+  for (const en of world.enemies) {
+    if (!en.active || (en as any).alive === false || en.state === 'squashed' || en.state === 'knocked' || (en.hp ?? 1) <= 0) continue;
+    if (hitIds.includes(en.id)) continue;
+    const dist = Math.hypot(en.x + en.width / 2 - (ex + 12), en.y + en.height / 2 - (ey + 16));
+    if (dist <= radius) {
+      hitIds.push(en.id);
+      en.shieldFront = false;
+      en.stunTimer = 75;
+      en.hp = (en.hp ?? 1) - 2;
+      spawnText(world, en.x, en.y - 14, '💥 -2 HP PINZA TEMPORAL', '#c084fc');
+      spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#c084fc', 8);
+      events.push({ type: 'sfx', id: 'kick' });
+      events.push({ type: 'haptic', kind: 'medium' });
+
+      if (en.hp <= 0) {
+        (en as any).alive = false;
+        en.state = 'knocked';
+        en.vy = -6.5;
+        addScore(world, en.brawlRole === 'core_crystal' ? 2000 : 500);
+        if (en.brawlRole === 'dojo_master' && world.risingHazardY !== undefined && world.risingHazardY !== null) {
+          world.risingHazardY += 6 * TILE;
+        }
+      }
+    }
   }
 }
 
@@ -880,6 +1290,7 @@ export function stepWorld(
   }
 
   // Player Status Timers
+  stepBrawlTimers(world);
   if (p.invulnTimer > 0) p.invulnTimer -= 1;
   if (p.fireCooldown > 0) p.fireCooldown -= 1;
   if (p.throwPoseTimer > 0) p.throwPoseTimer -= 1;
@@ -1014,11 +1425,27 @@ export function stepWorld(
     }
   }
 
+  // Machaque Sísmico (Ground Pound) en el aire (▼)
+  if (!p.onGround && input.down && !p.groundPounding && !p.mountedYoshi) {
+    p.slideTimer = 0;
+    triggerGroundPound(world, events);
+  }
+
   // Edge triggers for Fire (X) and Spin/Tongue (Y)
   const fireTriggered = input.fire && !world.prevFireHeld;
   world.prevFireHeld = input.fire;
   const spinTriggered = input.spin && !world.prevSpinHeld;
   world.prevSpinHeld = input.spin;
+
+  // Combo Melee 1-2-3 (Botón X)
+  if (fireTriggered && !p.dead) {
+    triggerMeleeCombo(world, events, input.up);
+  }
+
+  // Parry / Contraataque Perfecto (Botón Y)
+  if (spinTriggered) {
+    triggerParry(world, events);
+  }
 
   // Inverted Gravity Flip via Y button in flip mode (when gravityDir is defined)
   let gravityFlipped = false;
@@ -1093,8 +1520,26 @@ export function stepWorld(
       animFrame: 0,
     });
   } else if (fireTriggered && !p.mountedYoshi && p.powerState <= 1) {
-    // Llave inglesa (Fase 4): el plomero sin flor ni capa también ataca
-    throwWrench(world, events);
+    // Llave inglesa a media distancia (si no hay objetivo en rango melee)
+    const mx = p.facing > 0 ? p.x + p.width - 4 : p.x - 38;
+    const my = p.y - 4;
+    const mw = 42;
+    const mh = p.height + 8;
+    const meleeBox: Rect = { x: mx, y: my, width: mw, height: mh };
+    const hasMeleeTarget =
+      world.enemies.some(
+        (en) =>
+          en.active &&
+          (en as any).alive !== false &&
+          en.state !== 'squashed' &&
+          en.state !== 'knocked' &&
+          (en.hp ?? 1) > 0 &&
+          overlaps(meleeBox, en)
+      ) || Boolean(world.boss && !world.boss.defeated && overlaps(meleeBox, world.boss));
+
+    if (!hasMeleeTarget) {
+      throwWrench(world, events);
+    }
   }
 
   // Active Cape Spin Hitbox: whacks enemies & flips adjacent Rotating/Brick blocks!
@@ -1211,7 +1656,8 @@ export function stepWorld(
   const sprinting = input.run || input.fire;
   const starBoost = p.starTimer > 0 ? 1.15 : 1.0;
   const yoshiBoost = p.mountedYoshi ? 1.05 : 1.0;
-  const maxSpeed = (sprinting ? 5.8 : 3.7) * starBoost * yoshiBoost;
+  const furyBoost = (p.furyTimer ?? 0) > 0 ? 1.2 : 1.0;
+  const maxSpeed = (sprinting ? 5.8 : 3.7) * starBoost * yoshiBoost * furyBoost;
   const groundAccel = biome.slippery
     ? sprinting
       ? 0.24
@@ -1304,6 +1750,10 @@ export function stepWorld(
   if (windAccel !== 0) {
     const cap = maxSpeed + 1.6;
     p.vx = Math.max(-cap, Math.min(cap, p.vx + windAccel));
+  }
+
+  if (p.groundPounding) {
+    p.vx = 0;
   }
 
   p.x += p.vx;
@@ -1514,9 +1964,38 @@ export function stepWorld(
     p.vy = 1.85 * gDir;
   }
 
+  // Machaque Sísmico (Ground Pound) vertical physics
+  if (p.groundPounding) {
+    p.vx = 0;
+    if ((p.groundPoundDelay ?? 0) > 0) {
+      p.vy = 0;
+    } else {
+      p.vy = 14.5 * gDir;
+    }
+  }
+
   const prevY = p.y;
   p.y += p.vy;
   p.onGround = false;
+
+  // Impacto aéreo directo de Ground Pound contra enemigos o jefe
+  if (p.groundPounding && (p.groundPoundDelay ?? 0) <= 0) {
+    let directHit = false;
+    for (const en of world.enemies) {
+      if (en.active && (en as any).alive !== false && en.state !== 'squashed' && en.state !== 'knocked' && (en.hp ?? 1) > 0) {
+        if (overlaps(p, en)) {
+          executeGroundPoundImpact(world, events, en);
+          p.vy = -7.5 * gDir;
+          directHit = true;
+          break;
+        }
+      }
+    }
+    if (!directHit && world.boss && !world.boss.defeated && overlaps(p, world.boss)) {
+      executeGroundPoundImpact(world, events, world.boss);
+      p.vy = -7.5 * gDir;
+    }
+  }
 
   const hitMovingAgainstGravity = gDir === 1 ? p.vy < 0 : p.vy > 0;
   const vertSolids = collectNearbySolids(world, p, hitMovingAgainstGravity);
@@ -1545,6 +2024,9 @@ export function stepWorld(
         p.y = s.y - p.height;
         p.vy = 0;
         p.onGround = true;
+        if (p.groundPounding) {
+          executeGroundPoundImpact(world, events);
+        }
       } else if (p.vy < 0) {
         if (s.platform) continue;
         if (isPassableAscentLedge(world, s)) continue;
@@ -1589,6 +2071,9 @@ export function stepWorld(
         p.y = s.y + s.height;
         p.vy = 0;
         p.onGround = true;
+        if (p.groundPounding) {
+          executeGroundPoundImpact(world, events);
+        }
       } else if (p.vy > 0) {
         // Hitting blocks on top
         if (s.platform) continue;
@@ -1624,6 +2109,10 @@ export function stepWorld(
         }
       }
     }
+  }
+
+  if (p.groundPounding && p.onGround) {
+    executeGroundPoundImpact(world, events);
   }
 
   // Walk animation clock
@@ -2053,25 +2542,34 @@ export function stepWorld(
 
   // Llave inglesa en vuelo (Fase 4)
   updateWrench(world, events, {
-    knockEnemy: (en) => knockEnemy(world, en, 0, events),
+    knockEnemy: (en) => {
+      if (p.meleeHitIds?.includes(en.id)) return;
+      knockEnemy(world, en, 0, events, world.wrench?.dmg ? 0 : 1);
+    },
     collectCoin: (x, y) => awardCoin(world, x, y, events),
     hitBlock: (b) => triggerBlockHit(world, b, true, events),
     hitBoss: () => {
       const boss = world.boss;
       if (!boss || boss.defeated) return;
       if (boss.hurtFlashTimer <= 0) {
+        const dmg = world.wrench?.dmg ?? 2;
         if (boss.phase === 'shell_spin') {
-          damageBoss(world, boss, 2, '¡ESCUDO ROTO -2!', events);
+          damageBoss(world, boss, dmg, `¡ESCUDO ROTO -${dmg}!`, events);
           boss.phase = 'stunned';
           boss.phaseTimer = 110;
         } else {
-          damageBoss(world, boss, 2, '¡LLAVE INGLESA -2!', events);
+          damageBoss(world, boss, dmg, world.wrench?.fury ? `¡ONDA FURIA -${dmg}!` : `¡LLAVE INGLESA -${dmg}!`, events);
         }
       }
     },
     sparks: (x, y, color, count) => spawnSparks(world, x, y, color, count),
   });
   updateShaftHints(world, (x, y, text, color) => spawnText(world, x, y, text, color));
+
+  // Super Plomero Brawl: Combate Melee, Proyectiles Lanzados y Ataque del Eco
+  stepMeleeCombat(world, events);
+  stepLaunchedEnemies(world, viewportWorldWidth, events);
+  stepEchoAttack(world, events);
 
   // =========================================================================
   // 7. ENEMIES (Classic + SMW Rex, Galoomba, Chargin' Chuck, Bullet Bill)
@@ -2095,6 +2593,11 @@ export function stepWorld(
     if (en.kickGraceTimer > 0) en.kickGraceTimer -= 1;
     en.animTimer += 1;
 
+    // Enemigo lanzado por el jugador como proyectil: lo procesa stepLaunchedEnemies
+    if (en.launchedByPlayer) {
+      continue;
+    }
+
     if (en.state === 'squashed') {
       en.stateTimer -= 1;
       if (en.stateTimer <= 0) world.enemies.splice(i, 1);
@@ -2109,11 +2612,60 @@ export function stepWorld(
       continue;
     }
 
+    // Núcleo Gravitacional Blindado (core_crystal): estático, no cae por gravedad
+    if (en.brawlRole === 'core_crystal') {
+      en.vx = 0;
+      en.vy = 0;
+      en.onGround = true;
+      if (overlaps(p, en)) {
+        if (p.groundPounding) {
+          executeGroundPoundImpact(world, events, en);
+          p.vy = -7.5 * (world.gravityDir ?? 1);
+        } else {
+          const prevBottom = prevY + p.height;
+          const stomping = p.vy > 0 && prevBottom <= en.y + 20;
+          if (stomping) {
+            p.vy = -8.0;
+            events.push({ type: 'sfx', id: 'bump' });
+            spawnText(world, en.x, en.y - 10, '¡USA GROUND POUND O COMBO!', '#c084fc');
+          }
+        }
+      }
+      continue;
+    }
+
+    // Aturdimiento: inmóvil mientras stunTimer > 0
+    const isStunned = (en.stunTimer ?? 0) > 0;
+    if (isStunned) {
+      en.stunTimer! -= 1;
+      en.vx = 0;
+      if (world.frameCount % 10 === 0) {
+        spawnSparks(world, en.x + en.width / 2, en.y - 4, '#fde047', 1);
+      }
+    }
+
     // Bullet Bill: flies straight through air ignoring gravity & blocks!
     if (en.type === 'bullet_bill') {
       en.x += en.vx;
       en.facing = en.vx >= 0 ? 1 : -1;
       if (overlaps(p, en)) {
+        // Parry a Bala Bill: refleja como proyectil hacia adelante
+        if ((p.parryTimer ?? 0) > 0) {
+          en.vx = -en.vx * 1.8;
+          en.facing = en.vx >= 0 ? 1 : -1;
+          en.knockbackVx = en.vx;
+          en.launchedByPlayer = true;
+          p.invulnTimer = Math.max(p.invulnTimer, 18);
+          p.parryFlashTimer = 14;
+          world.screenShake = Math.max(world.screenShake, 7);
+          addFury(world, 35, events);
+          events.push({ type: 'sfx', id: 'kick' });
+          events.push({ type: 'haptic', kind: 'heavy' });
+          spawnText(world, p.x, p.y - 18, '⚡ ¡PARRY BALA BILL!', '#fde047');
+          spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 10);
+          continue;
+        }
+
         const stomping = p.vy > 0 && prevY + p.height <= en.y + 18;
         if (p.starTimer > 0 || stomping || p.spinJumping || p.mountedYoshi) {
           if (stomping || p.spinJumping || p.mountedYoshi) {
@@ -2172,7 +2724,7 @@ export function stepWorld(
     }
 
     // Chargin' Chuck AI: faces Plomero, sprints to tackle & periodically leaps!
-    if (en.type === 'chuck') {
+    if (!isStunned && en.type === 'chuck' && !en.brawlRole) {
       en.stateTimer += 1;
       const targetDir = p.x < en.x ? -1 : 1;
       en.vx += targetDir * 0.09;
@@ -2180,6 +2732,59 @@ export function stepWorld(
       if (en.onGround && en.stateTimer % 85 === 0) {
         en.vy = -7.8;
         en.onGround = false;
+      }
+    }
+
+    // IA Brawl: captain / bounty_commander / dojo_master
+    if (!isStunned && (en.brawlRole === 'captain' || en.brawlRole === 'bounty_commander' || en.brawlRole === 'dojo_master')) {
+      const dist = Math.abs(p.x - en.x);
+      if (dist < 6 * TILE) {
+        const targetDir = p.x < en.x ? -1 : 1;
+        en.facing = targetDir;
+        if (en.brawlRole === 'bounty_commander') {
+          en.stateTimer = (en.stateTimer ?? 0) + 1;
+          if (en.onGround && en.stateTimer % 90 < 30) {
+            en.vx = -targetDir * 2.2;
+            if (en.stateTimer % 90 === 0) {
+              en.vy = -7.5;
+              en.onGround = false;
+            }
+          } else {
+            en.vx = targetDir * 2.4;
+          }
+        } else {
+          en.vx = targetDir * 1.85;
+          en.stateTimer = (en.stateTimer ?? 0) + 1;
+          if (en.onGround && en.stateTimer % 75 === 0) {
+            en.vy = -6.5;
+            en.onGround = false;
+          }
+        }
+      }
+    }
+
+    // IA Rival 1v1: Plomero Sombra (star_road)
+    if (!isStunned && en.brawlRole === 'shadow_rival') {
+      const targetDir = p.x < en.x ? -1 : 1;
+      en.facing = targetDir;
+      en.vx = targetDir * 2.6;
+      en.stateTimer = (en.stateTimer ?? 0) + 1;
+      if (en.onGround && (p.y < en.y - 16 || (Math.abs(p.x - en.x) < 3 * TILE && en.stateTimer % 60 === 0))) {
+        en.vy = -9.8;
+        en.onGround = false;
+      }
+      if (en.stateTimer % 90 === 0) {
+        world.bossFires.push({
+          x: en.facing === 1 ? en.x + en.width + 4 : en.x - 28,
+          y: en.y + 10,
+          targetY: p.y + p.height / 2,
+          vx: en.facing * 4.2,
+          width: 28,
+          height: 14,
+          animTimer: 0,
+        });
+        events.push({ type: 'sfx', id: 'fireball' });
+        spawnText(world, en.x, en.y - 14, '🔥 ¡FUEGO SOMBRA!', '#a855f7');
       }
     }
 
@@ -2314,6 +2919,22 @@ export function stepWorld(
         continue;
       }
 
+      // Parry / Contraataque Perfecto
+      if ((p.parryTimer ?? 0) > 0) {
+        p.invulnTimer = Math.max(p.invulnTimer, 18);
+        p.parryFlashTimer = 14;
+        world.screenShake = Math.max(world.screenShake, 7);
+        addFury(world, 35, events);
+        en.stunTimer = 120;
+        en.shieldFront = false;
+        en.x += p.facing * 24;
+        events.push({ type: 'sfx', id: 'bump' });
+        events.push({ type: 'haptic', kind: 'rigid' });
+        spawnText(world, en.x, en.y - 14, '⚡ ¡PARRY! ATURDIDO', '#fde047');
+        spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 10);
+        continue;
+      }
+
       if (en.state === 'shell_idle' || en.state === 'shell_wake') {
         const dir = p.x + p.width / 2 <= en.x + en.width / 2 ? 1 : -1;
         en.state = 'shell_slide';
@@ -2348,7 +2969,28 @@ export function stepWorld(
         p.stompCombo += 1;
         spawnSparks(world, en.x + en.width / 2, en.y + 4, '#ffffff', 4);
 
-        if (en.type === 'spiny') {
+        if (
+          en.brawlRole === 'captain' ||
+          en.brawlRole === 'bounty_commander' ||
+          en.brawlRole === 'shadow_rival' ||
+          en.brawlRole === 'dojo_master'
+        ) {
+          en.hp = (en.hp ?? 1) - 1;
+          spawnText(world, en.x, en.y - 10, '-1 HP', '#f59e0b');
+          if (en.hp <= 0) {
+            (en as any).alive = false;
+            en.state = 'knocked';
+            en.vy = -7.5;
+            addScore(world, 500);
+            if (en.brawlRole === 'dojo_master' && world.risingHazardY !== undefined && world.risingHazardY !== null) {
+              world.risingHazardY += 6 * TILE;
+              p.vy = -12 * (world.gravityDir ?? 1);
+              spawnText(world, p.x, p.y - 20, '¡SUPER IMPULSO!', '#f59e0b');
+            }
+          } else {
+            en.stunTimer = 60;
+          }
+        } else if (en.type === 'spiny') {
           // Yoshi or Spin Jump bounces safely or crushes Spiny!
           if (p.mountedYoshi) {
             knockEnemy(world, en, p.stompCombo, events);
@@ -2384,7 +3026,7 @@ export function stepWorld(
           en.vx = 0;
           en.stateTimer = 24;
         }
-      } else if (en.kickGraceTimer <= 0) {
+      } else if (en.kickGraceTimer <= 0 && !(en.stunTimer && en.stunTimer > 0)) {
         damagePlayer(world, events);
       }
     }
@@ -2639,7 +3281,16 @@ export function stepWorld(
 
       // Pisotón seguro desde arriba (overlaps(p, boss)) y Daño
       if (overlaps(p, boss)) {
-        if (p.starTimer > 0) {
+        if ((p.parryTimer ?? 0) > 0) {
+          p.invulnTimer = Math.max(p.invulnTimer, 18);
+          p.parryFlashTimer = 14;
+          world.screenShake = Math.max(world.screenShake, 7);
+          addFury(world, 35, events);
+          boss.phase = 'stunned';
+          boss.phaseTimer = 120;
+          damageBoss(world, boss, 2, '⚡ ¡PARRY JEFE -2!', events);
+          p.vx = -p.facing * 4;
+        } else if (p.starTimer > 0) {
           if (boss.hurtFlashTimer <= 0) {
             damageBoss(world, boss, 2, '¡INVENCIBLE -2!', events);
           }
@@ -2676,6 +3327,20 @@ export function stepWorld(
       bf.y += bf.y < bf.targetY ? 1.4 : -1.4;
     }
     if (overlaps(p, bf)) {
+      if ((p.parryTimer ?? 0) > 0) {
+        bf.vx = -bf.vx * 1.8;
+        bf.targetY = world.boss ? world.boss.y + 18 : bf.y;
+        (bf as any).reflected = true;
+        p.invulnTimer = Math.max(p.invulnTimer, 18);
+        p.parryFlashTimer = 14;
+        world.screenShake = Math.max(world.screenShake, 7);
+        addFury(world, 35, events);
+        events.push({ type: 'sfx', id: 'bump' });
+        events.push({ type: 'haptic', kind: 'rigid' });
+        spawnText(world, p.x, p.y - 18, '⚡ ¡PARRY FUEGO!', '#fde047');
+        spawnSparks(world, p.x + p.width / 2, p.y + p.height / 2, '#fde047', 10);
+        continue;
+      }
       if (p.spinJumping && p.vy > 0) {
         p.vy = -8.2;
         events.push({ type: 'sfx', id: 'spin_jump' });
@@ -2683,6 +3348,37 @@ export function stepWorld(
         damagePlayer(world, events);
       }
     }
+
+    if ((bf as any).reflected) {
+      for (const en of world.enemies) {
+        if (
+          en.active &&
+          (en as any).alive !== false &&
+          en.state !== 'squashed' &&
+          en.state !== 'knocked' &&
+          (en.hp ?? 1) > 0 &&
+          overlaps(bf, en)
+        ) {
+          en.hp = (en.hp ?? 1) - 3;
+          spawnText(world, en.x, en.y - 10, '-3 HP', '#fde047');
+          spawnSparks(world, en.x + en.width / 2, en.y + en.height / 2, '#fde047', 8);
+          if (en.hp <= 0) {
+            (en as any).alive = false;
+            en.state = 'knocked';
+            en.vy = -6.5;
+            if (en.brawlRole === 'dojo_master' && world.risingHazardY !== undefined && world.risingHazardY !== null) {
+              world.risingHazardY += 6 * TILE;
+            }
+          }
+        }
+      }
+      if (world.boss && !world.boss.defeated && overlaps(bf, world.boss)) {
+        damageBoss(world, world.boss, 3, '¡FUEGO REFLEJADO -3!', events);
+        world.bossFires.splice(i, 1);
+        continue;
+      }
+    }
+
     if (bf.x < world.cameraX - 80 || bf.x > world.cameraX + viewportWorldWidth + 80) {
       world.bossFires.splice(i, 1);
     }

@@ -199,6 +199,8 @@ export const GameView: React.FC = () => {
     dragonCoins: 0,
     bossHp: null,
     bossMaxHp: null,
+    furyMeter: 0,
+    furyTimer: 0,
   });
 
   // Lock iPhone 12 into full-screen Landscape immediately on launch
@@ -379,7 +381,9 @@ export const GameView: React.FC = () => {
         const arenaWaveKey = activeWorld.arenaWave
           ? `${activeWorld.arenaWave.current}/${activeWorld.arenaWave.total}`
           : '';
-        const hudKey = `${activeWorld.partition}|${activeWorld.status}|${activeWorld.score}|${activeWorld.coins}|${activeWorld.dragonCoinsCollected}|${activeWorld.worldLabel}|${activeWorld.timeLeft}|${activeWorld.lives}|${activeWorld.player.powerState}|${starActive}|${pBucket}|${activeWorld.player.mountedYoshi}|${yoshiFireReady}|${bossHp}|${activeWorld.gemsCollected ?? 0}|${activeWorld.objective ?? ''}|${activeWorld.hasKey ? 1 : 0}|${activeWorld.cameraMode ?? 'side'}|${activeWorld.gravityDir ?? 1}|${activeWorld.onOffState ?? ''}|${activeWorld.subArea ?? ''}|${arenaWaveKey}`;
+        const furyBucket = Math.floor((activeWorld.player.furyMeter ?? 0) / 5);
+        const furyTimerActive = (activeWorld.player.furyTimer ?? 0) > 0 ? 1 : 0;
+        const hudKey = `${activeWorld.partition}|${activeWorld.status}|${activeWorld.score}|${activeWorld.coins}|${activeWorld.dragonCoinsCollected}|${activeWorld.worldLabel}|${activeWorld.timeLeft}|${activeWorld.lives}|${activeWorld.player.powerState}|${starActive}|${pBucket}|${activeWorld.player.mountedYoshi}|${yoshiFireReady}|${bossHp}|${activeWorld.gemsCollected ?? 0}|${activeWorld.objective ?? ''}|${activeWorld.hasKey ? 1 : 0}|${activeWorld.cameraMode ?? 'side'}|${activeWorld.gravityDir ?? 1}|${activeWorld.onOffState ?? ''}|${activeWorld.subArea ?? ''}|${arenaWaveKey}|${furyBucket}|${furyTimerActive}`;
         if (hudKey !== lastHudKey) {
           lastHudKey = hudKey;
           setUiStatus(activeWorld.status);
@@ -409,6 +413,8 @@ export const GameView: React.FC = () => {
             arenaWave: activeWorld.arenaWave
               ? { current: activeWorld.arenaWave.current, total: activeWorld.arenaWave.total }
               : null,
+            furyMeter: activeWorld.player.furyMeter ?? 0,
+            furyTimer: activeWorld.player.furyTimer ?? 0,
           });
         }
       }

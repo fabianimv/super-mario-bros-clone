@@ -314,6 +314,14 @@ for (let lvl = 0; lvl < 8; lvl++) {
   );
   assert(w.player.onGround === true, `Tower ${lvl}: spawn sobre suelo sólido`);
 
+  // 3 dojo_master guardianes de piso
+  const dojoMasters = w.enemies.filter((e) => e.brawlRole === 'dojo_master');
+  assert(dojoMasters.length === 3, `Tower ${lvl}: debe tener 3 guardianes dojo_master (tiene ${dojoMasters.length})`);
+  for (const dm of dojoMasters) {
+    assert(dm.hp === 3 && dm.maxHp === 3, `Tower ${lvl}: dojo_master con 3 HP`);
+    assert((dm.hp ?? 0) > 0 && dm.state !== 'squashed' && dm.state !== 'knocked', `Tower ${lvl}: dojo_master vivo`);
+  }
+
   // Meta en la cima
   const isFortress = lvl % 4 === 3;
   if (isFortress) {
@@ -367,6 +375,24 @@ for (let lvl = 0; lvl < 8; lvl++) {
     `Magma asciende: inicial ${hazardY0.toFixed(1)} -> final ${w.risingHazardY!.toFixed(1)}`
   );
 
+  // 3b. Derrotar a un dojo_master empuja el magma hacia abajo (+6 * TILE) y da super impulso
+  const dm = w.enemies.find((e) => e.brawlRole === 'dojo_master')!;
+  assert(dm != null, 'T-1 tiene dojo_master');
+  dm.active = true;
+  w.player.x = dm.x - 20;
+  w.player.y = dm.y;
+  w.player.facing = 1;
+  w.player.onGround = true;
+  w.risingHazardY = w.player.y + 4 * TILE;
+  const hazardBefore = w.risingHazardY;
+  dm.hp = 1;
+  stepWorld(w, { ...NO_INPUT, fire: true }, VIEW_W); // Combo melee jab derrota a dojo_master
+  assert(
+    w.risingHazardY >= hazardBefore + 5 * TILE,
+    `Derrotar a un dojo_master empuja el magma hacia abajo (antes ${hazardBefore}, ahora ${w.risingHazardY})`
+  );
+  assert(w.player.vy < -8, `Derrotar a un dojo_master otorga super impulso vertical (vy=${w.player.vy})`);
+
   // 4. Seguimiento vertical de cameraY
   const camY0 = w.cameraY ?? 0;
   // Subir al jugador a la mitad de la torre
@@ -379,9 +405,9 @@ for (let lvl = 0; lvl < 8; lvl++) {
 }
 
 // ============================================================================
-// 12d. Modo Flip: Templo Inverso (8 salas puzzle G-1..I-4)
+// 12d. Modo Flip: Templo Inverso (8 salas puzzle G-1..I-4, core_breaker)
 // ============================================================================
-console.log('   - 12d. Verificando Modo Flip (8 salas puzzle, gravedad Y, ON/OFF y gemas)...');
+console.log('   - 12d. Verificando Modo Flip (8 salas puzzle, gravedad Y, ON/OFF y núcleos)...');
 
 for (let lvl = 0; lvl < 8; lvl++) {
   const w = buildWorldState(lvl, undefined, 'flip');
@@ -390,8 +416,17 @@ for (let lvl = 0; lvl < 8; lvl++) {
   assert(w.totalCols === 52, `Flip ${lvl}: totalCols === 52`);
   assert(w.gravityDir === 1, `Flip ${lvl}: gravedad inicial 1`);
   assert(w.onOffState === 'on', `Flip ${lvl}: onOffState inicial 'on'`);
-  assert(w.objective === 'collect', `Flip ${lvl}: objetivo 'collect'`);
-  assert(w.gemsNeeded != null && w.gemsNeeded >= 3, `Flip ${lvl}: requiere >= 3 gemas`);
+  assert(w.objective === 'core_breaker', `Flip ${lvl}: objetivo 'core_breaker'`);
+  assert(w.gemsNeeded === 0, `Flip ${lvl}: gemsNeeded === 0`);
+  assert(w.gemsCollected === 0 || w.gemsCollected === undefined, `Flip ${lvl}: 0 gemas recolectadas`);
+  assert(!(w.pickups ?? []).some((p) => p.kind === 'gem'), `Flip ${lvl}: cero pickups de tipo gem`);
+
+  const cores = w.enemies.filter((e) => e.brawlRole === 'core_crystal');
+  assert(cores.length === 3, `Flip ${lvl}: exactamente 3 núcleos gravitacionales core_crystal`);
+  for (const c of cores) {
+    assert(c.hp === 3 && c.maxHp === 3, `Flip ${lvl}: core_crystal con 3 HP`);
+    assert(c.active === true, `Flip ${lvl}: core_crystal activo`);
+  }
 
   // Nexo Central: spawn alrededor de col 25, row 22
   assert(
@@ -509,14 +544,18 @@ for (let lvl = 0; lvl < 8; lvl++) {
   for (let f = 0; f < 24; f++) stepWorld(w, NO_INPUT, VIEW_W);
   assert(w.status === 'playing', 'Teletransporte completado en playing');
 
-  // 6. Desbloqueo de meta al recoger todas las gemas
-  assert(isGoalLocked(w) === true, 'Meta bloqueada al inicio (0 gemas recolectadas)');
-  const gems = w.pickups!.filter((pk) => pk.kind === 'gem');
-  assert(gems.length >= w.gemsNeeded!, 'Gemas suficientes en el nivel');
+  // 6. Desbloqueo de meta al destruir los 3 núcleos core_crystal
+  assert(isGoalLocked(w) === true, 'Meta bloqueada al inicio (3 núcleos core_crystal vivos)');
+  const cores = w.enemies.filter((e) => e.brawlRole === 'core_crystal');
+  assert(cores.length === 3, '3 núcleos core_crystal encontrados en el nivel');
 
-  for (const gem of gems) gem.collected = true;
-  w.gemsCollected = w.gemsNeeded!;
-  assert(isGoalLocked(w) === false, 'Meta desbloqueada al reunir todas las gemas');
+  for (const core of cores) {
+    core.hp = 0;
+    (core as any).alive = false;
+    core.state = 'knocked';
+  }
+  w.brawlTargetsDefeated = 3;
+  assert(isGoalLocked(w) === false, 'Meta desbloqueada al destruir los 3 núcleos core_crystal');
 }
 
 // ============================================================================
@@ -534,6 +573,18 @@ for (let lvl = 0; lvl < 4; lvl++) {
   assert(w.arenaWave!.total === 3, `Coliseo ${lvl}: 3 oleadas totales`);
   assert(w.arenaWave!.current === 1, `Coliseo ${lvl}: inicia en oleada 1`);
   assert(w.flagpole != null, `Coliseo ${lvl}: asta de meta en col 13`);
+
+  // Rival: Plomero Sombra (shadow_rival)
+  const shadow = w.enemies.find((e) => e.brawlRole === 'shadow_rival');
+  assert(shadow != null, `Coliseo ${lvl}: Plomero Sombra presente`);
+  assert((shadow!.hp ?? 0) >= 6, `Coliseo ${lvl}: Plomero Sombra con HP >= 6 (tiene ${shadow!.hp})`);
+  assert(shadow!.active === true, `Coliseo ${lvl}: Plomero Sombra activo`);
+
+  // Zona de spawn 100% segura (ningún enemigo dentro de 6 * TILE)
+  const spawnDist = Math.abs(shadow!.x - w.player.x);
+  assert(spawnDist >= 6 * TILE, `Coliseo ${lvl}: Plomero Sombra fuera de zona de spawn (${(spawnDist / TILE).toFixed(1)} tiles)`);
+  const spawnDanger = w.enemies.filter((e) => e.active && Math.abs(e.x - w.player.x) < 6 * TILE);
+  assert(spawnDanger.length === 0, `Coliseo ${lvl}: zona de spawn 100% libre de enemigos`);
 }
 
 // Simulación de las 3 oleadas y mutación de suelo en ★-1

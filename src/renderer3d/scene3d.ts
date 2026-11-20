@@ -644,9 +644,16 @@ export class World3DScene {
       const x = toX(pk.x + pk.width / 2);
       const y = toY(pk.y + pk.height / 2) + Math.sin(frame * 0.09 + pk.phase) * 0.08;
       switch (pk.kind) {
-        case 'gem':
-          this.gems.add(x, y, 0, 0.55, 0.8, 0.55, '#e879f9', 0, frame * 0.05, 0);
+        case 'p_switch': {
+          const py = toY(pk.y + pk.height / 2);
+          this.cylinders.add(x, py - 0.22, 0, 0.7, 0.16, 0.7, '#1e293b');
+          this.glowBlocks.add(x, py - 0.16, 0, 0.65, 0.06, 0.65, '#facc15');
+          this.glowBlocks.add(x, py + 0.04, 0, 0.5, 0.32, 0.5, '#2563eb');
+          this.glowBlocks.add(x, py + 0.06, 0.26, 0.22, 0.22, 0.06, '#fef08a');
+          const pAura = (Math.sin(frame * 0.18 + pk.phase) + 1) * 0.5;
+          this.glowSpheres.add(x, py + 0.04, 0, 0.6 + pAura * 0.15, 0.45 + pAura * 0.1, 0.6 + pAura * 0.15, '#3b82f6');
           break;
+        }
         case 'clock':
           this.cylinders.add(x, y, 0, 0.7, 0.18, 0.7, '#facc15', Math.PI / 2, 0, 0);
           this.cylinders.add(x, y, 0.05, 0.5, 0.2, 0.5, '#fefce8', Math.PI / 2, 0, 0);
@@ -790,6 +797,38 @@ export class World3DScene {
       if (isGoalLocked(world)) {
         this.ghost.add(px, -7, 0, 0.5, 10, 1, '#a855f7');
         this.glowBlocks.add(px, -9, 0.6, 0.7, 0.6, 0.2, '#facc15');
+        // Diana/anillo dorado brillante en la parte alta del asta en 3D
+        const pyTop = toY(fp.y + fp.height * 0.22);
+        this.rings.add(px, pyTop, 0.1, 0.65, 0.65, 0.65, '#facc15', 0, 0, frame * 0.05);
+        this.rings.add(px, pyTop, 0.1, 0.42, 0.42, 0.42, '#ef4444', 0, 0, -frame * 0.07);
+        this.glowSpheres.add(px, pyTop, 0.1, 0.22, 0.22, 0.22, '#ffffff');
+      } else if ((world.pSwitchTimer ?? 0) > 0) {
+        // Aura dorada de sprint ([P] activo)
+        const sprintPulse = Math.sin(frame * 0.2) * 0.12;
+        this.rings.add(px, toY(fp.y + fp.height * 0.5), 0, 1.3 + sprintPulse, 1.3 + sprintPulse, 1.3 + sprintPulse, '#facc15', Math.PI / 2, 0, frame * 0.1);
+        this.rings.add(px, toY(fp.y + fp.height * 0.2), 0, 0.95 + sprintPulse, 0.95 + sprintPulse, 0.95 + sprintPulse, '#fde047', Math.PI / 2, 0, -frame * 0.1);
+        this.glowSpheres.add(px, toY(fp.y) + 0.2, 0, 0.5 + sprintPulse, 0.5 + sprintPulse, 0.5 + sprintPulse, '#fef08a');
+      }
+    }
+    const gt = world.goalTape;
+    if (gt && inView(gt.x)) {
+      const px = toX(gt.x + gt.width / 2);
+      const postHeight = gt.height * U;
+      this.cylinders.add(toX(gt.x - 2), toY(gt.y + gt.height / 2), 0, 0.16, postHeight, 0.16, '#facc15');
+      this.cylinders.add(toX(gt.x + 22), toY(gt.y + gt.height / 2), 0, 0.16, postHeight, 0.16, '#facc15');
+      this.blocks.add(px, toY(gt.barY), 0, 1.4, 0.2, 0.1, '#dc2626');
+      if (isGoalLocked(world)) {
+        this.ghost.add(px, -7, 0, 0.5, 10, 1, '#a855f7');
+        this.glowBlocks.add(px, -9, 0.6, 0.7, 0.6, 0.2, '#facc15');
+        const pyTop = toY(gt.y + gt.height * 0.25);
+        this.rings.add(px, pyTop, 0.1, 0.65, 0.65, 0.65, '#facc15', 0, 0, frame * 0.05);
+        this.rings.add(px, pyTop, 0.1, 0.42, 0.42, 0.42, '#ef4444', 0, 0, -frame * 0.07);
+        this.glowSpheres.add(px, pyTop, 0.1, 0.22, 0.22, 0.22, '#ffffff');
+      } else if ((world.pSwitchTimer ?? 0) > 0) {
+        const sprintPulse = Math.sin(frame * 0.2) * 0.12;
+        this.rings.add(px, toY(gt.y + gt.height * 0.5), 0, 1.3 + sprintPulse, 1.3 + sprintPulse, 1.3 + sprintPulse, '#facc15', Math.PI / 2, 0, frame * 0.1);
+        this.rings.add(px, toY(gt.y + gt.height * 0.2), 0, 0.95 + sprintPulse, 0.95 + sprintPulse, 0.95 + sprintPulse, '#fde047', Math.PI / 2, 0, -frame * 0.1);
+        this.glowSpheres.add(px, toY(gt.y) + 0.2, 0, 0.5 + sprintPulse, 0.5 + sprintPulse, 0.5 + sprintPulse, '#fef08a');
       }
     }
     const cp = world.checkpoint;
@@ -860,9 +899,10 @@ export class World3DScene {
   }
 
   private addEnemy(en: Enemy, frame: number): void {
-    const color = ENEMY_COLORS[en.type] ?? '#8b5a2b';
+    const isShadow = en.brawlRole === 'shadow_rival';
+    const color = isShadow ? '#18181b' : (ENEMY_COLORS[en.type] ?? '#8b5a2b');
     // Un 15% más grandes que su caja de colisión para leerse mejor (pies fijos en el suelo)
-    const K = 1.15;
+    const K = en.brawlRole === 'captain' || en.brawlRole === 'dojo_master' ? 1.35 : 1.15;
     const x = toX(en.x + en.width / 2);
     const w = en.width * U * K;
     const h = en.height * U * K;
@@ -871,14 +911,46 @@ export class World3DScene {
     const face = en.facing === 1 ? 1 : -1;
     const step = Math.sin(frame * 0.3 + en.id) * 0.06;
 
+    // Núcleo Gravitacional Blindado (Super Plomero Brawl)
+    if (en.brawlRole === 'core_crystal') {
+      const pulse = Math.sin(frame * 0.15 + en.id) * 0.12;
+      const crW = (w * 1.3 + pulse) * 0.7;
+      const crH = (h * 1.5 + pulse) * 0.7;
+      this.gems.add(x, y, 0, crW, crH, crW, '#d946ef', 0, frame * 0.08, 0);
+      this.rings.add(x, y, 0, crW * 1.4, crW * 1.4, 0.35, '#06b6d4', Math.PI / 4, 0, frame * 0.12);
+      this.glowSpheres.add(x, y, 0, 0.45, 0.45, 0.45, '#22d3ee');
+      const spk = Math.sin(frame * 0.3) * 0.2;
+      this.glowSpheres.add(x + spk, y + 0.3, 0.1, 0.18, 0.18, 0.18, '#fef08a');
+      this.glowSpheres.add(x - spk, y - 0.3, -0.1, 0.18, 0.18, 0.18, '#f0abfc');
+      if (en.maxHp && en.maxHp > 1) {
+        const hpFrac = Math.max(0, Math.min(1, en.hp / en.maxHp));
+        const barY = y + crH * 0.8 + 0.25;
+        this.blocks.add(x, barY, 0.2, 0.9, 0.14, 0.08, '#1e1b4b');
+        this.glowBlocks.add(x - 0.45 * (1 - hpFrac), barY, 0.24, 0.9 * hpFrac, 0.1, 0.09, '#38bdf8');
+      }
+      return;
+    }
+
     if (en.state === 'squashed') {
       this.spheres.add(x, toY(en.y + en.height) + 0.1, 0, w, 0.2, w, color);
       return;
     }
+
+    // Aura de Plomero Sombra / Aura de Rol
+    if (isShadow) {
+      const sAura = Math.sin(frame * 0.2 + en.id) * 0.1;
+      this.ghost.add(x, y, 0, w * 1.35 + sAura, h * 1.25 + sAura, w * 1.35, '#6b21a8');
+      this.rings.add(x, y + h * 0.2, 0, w * 1.2, 0.4, w * 1.2, '#dc2626', 0, 0, frame * 0.1);
+    } else if (en.brawlRole === 'captain' || en.brawlRole === 'bounty_commander' || en.brawlRole === 'dojo_master') {
+      const crownColor = en.brawlRole === 'captain' ? '#ef4444' : en.brawlRole === 'bounty_commander' ? '#c084fc' : '#f59e0b';
+      this.rings.add(x, y + h * 0.65, 0, w * 0.7, 0.25, w * 0.7, '#facc15', Math.PI * 0.25, 0, frame * 0.09);
+      this.glowSpheres.add(x, y + h * 0.75, 0, 0.22, 0.22, 0.22, crownColor);
+    }
+
     if (en.type === 'bullet_bill') {
       this.cylinders.add(x, y, 0, h * 0.9, w * 1.2, h * 0.9, color, 0, 0, Math.PI / 2);
       this.spheres.add(x - face * w * 0.6, y, 0, h * 0.9, h * 0.9, h * 0.9, color);
-      this.glowSpheres.add(x - face * w * 0.55, y + 0.12, 0.4, 0.12, 0.12, 0.12, '#ffffff');
+      this.glowSpheres.add(x - face * w * 0.55, y + 0.12, 0.4, 0.12, 0.12, 0.12, isShadow ? '#ef4444' : '#ffffff');
       return;
     }
     if (en.type === 'piranha') {
@@ -899,15 +971,20 @@ export class World3DScene {
     this.outlines.add(x, y - h * 0.08 + step * 0.3, 0, w * 1.05 + 0.12, bodyH + 0.12, w + 0.12, OUTLINE, flip, 0, 0);
     this.spheres.add(x, y - h * 0.08 + step * 0.3, 0, w * 1.05, bodyH, w, color, flip, 0, 0);
     if (isKoopa) {
-      this.spheres.add(x + face * w * 0.32, y + h * 0.32, 0.1, w * 0.55, h * 0.4, w * 0.55, '#fde68a', flip);
+      this.spheres.add(x + face * w * 0.32, y + h * 0.32, 0.1, w * 0.55, h * 0.4, w * 0.55, isShadow ? '#3f3f46' : '#fde68a', flip);
     }
     const eyeY = isKoopa ? y + h * 0.38 : y + h * 0.12;
     const eyeX = x + face * w * (isKoopa ? 0.42 : 0.22);
-    // Ojos grandes y expresivos
-    this.spheres.add(eyeX - 0.12, eyeY, 0.4, 0.22, 0.3, 0.12, '#ffffff', flip);
-    this.spheres.add(eyeX + 0.12, eyeY, 0.4, 0.22, 0.3, 0.12, '#ffffff', flip);
-    this.spheres.add(eyeX - 0.1 + face * 0.04, eyeY - 0.02, 0.47, 0.1, 0.15, 0.06, '#111827', flip);
-    this.spheres.add(eyeX + 0.14 + face * 0.04, eyeY - 0.02, 0.47, 0.1, 0.15, 0.06, '#111827', flip);
+    // Ojos grandes y expresivos (rojos brillantes si es Plomero Sombra)
+    if (isShadow) {
+      this.glowSpheres.add(eyeX - 0.1 + face * 0.04, eyeY - 0.02, 0.47, 0.14, 0.18, 0.1, '#ef4444', flip);
+      this.glowSpheres.add(eyeX + 0.14 + face * 0.04, eyeY - 0.02, 0.47, 0.14, 0.18, 0.1, '#ef4444', flip);
+    } else {
+      this.spheres.add(eyeX - 0.12, eyeY, 0.4, 0.22, 0.3, 0.12, '#ffffff', flip);
+      this.spheres.add(eyeX + 0.12, eyeY, 0.4, 0.22, 0.3, 0.12, '#ffffff', flip);
+      this.spheres.add(eyeX - 0.1 + face * 0.04, eyeY - 0.02, 0.47, 0.1, 0.15, 0.06, '#111827', flip);
+      this.spheres.add(eyeX + 0.14 + face * 0.04, eyeY - 0.02, 0.47, 0.1, 0.15, 0.06, '#111827', flip);
+    }
     this.spheres.add(x - w * 0.25, y - h * 0.45 + step, 0.1, w * 0.4, 0.18, 0.4, '#3f2a14', flip);
     this.spheres.add(x + w * 0.25, y - h * 0.45 - step, 0.1, w * 0.4, 0.18, 0.4, '#3f2a14', flip);
     if (en.type === 'paratroopa') {
@@ -921,6 +998,42 @@ export class World3DScene {
     }
     if (en.type === 'chuck') {
       this.spheres.add(x, y + h * 0.42, 0, w * 0.75, h * 0.35, w * 0.75, '#e5e7eb');
+    }
+
+    // Efectos de Combate 3D sobre Enemigos:
+    // 1. Estrellas de Aturdimiento
+    if (en.stunTimer && en.stunTimer > 0) {
+      const stunY = y + h * 0.62;
+      for (let k = 0; k < 3; k++) {
+        const a = frame * 0.16 + (k * 2 * Math.PI) / 3;
+        const sx = x + Math.cos(a) * (w * 0.55);
+        const sz = Math.sin(a) * 0.45;
+        this.glowSpheres.add(sx, stunY, sz, 0.16, 0.16, 0.16, '#fde047');
+      }
+    }
+
+    // 2. Escudo Frontal (Barrera azul translúcida)
+    if (en.shieldFront) {
+      const barrierX = x + face * (w * 0.65);
+      this.ghost.add(barrierX, y, 0.1, 0.15, h * 0.95, w * 0.85, '#38bdf8');
+      this.glowBlocks.add(barrierX, y, 0.12, 0.08, h * 0.85, w * 0.75, '#60a5fa');
+    }
+
+    // 3. Barra de Vida Flotante
+    if ((en.maxHp && en.maxHp > 1) || (en.brawlRole && en.brawlRole !== 'grunt')) {
+      const maxHp = en.maxHp || 3;
+      const hpFrac = Math.max(0, Math.min(1, en.hp / maxHp));
+      const barY = y + h * 0.6 + 0.32;
+      this.blocks.add(x, barY, 0.2, 0.85, 0.12, 0.08, '#1e1b4b');
+      this.glowBlocks.add(
+        x - 0.425 * (1 - hpFrac),
+        barY,
+        0.24,
+        0.85 * hpFrac,
+        0.09,
+        0.09,
+        en.brawlRole === 'captain' ? '#ef4444' : '#facc15'
+      );
     }
   }
 
@@ -944,6 +1057,28 @@ export class World3DScene {
     if (inverted) {
       this.hero.root.rotation.z = Math.PI;
     }
+
+    // Aura de Modo Furia en 3D (Super Plomero Brawl)
+    if ((p.furyTimer ?? 0) > 0) {
+      const px = toX(p.x + p.width / 2);
+      const py = feetY + (p.height * U * HERO_SCALE) / 2;
+      const fPulse = Math.sin(frame * 0.25) * 0.16;
+      this.ghost.add(px, py, 0, 1.45 + fPulse, 1.85 + fPulse, 1.35 + fPulse, '#ef4444');
+      this.rings.add(px, py, 0, 1.4 + fPulse, 1.4 + fPulse, 0.4, '#facc15', Math.PI / 2, 0, frame * 0.14);
+      this.glowSpheres.add(px, py + 0.3, 0.1, 0.28, 0.28, 0.28, '#fef08a');
+    }
+
+    // Escudo de Parry / Contraataque en 3D
+    if ((p.parryTimer ?? 0) > 0 || (p.parryFlashTimer ?? 0) > 0) {
+      const px = toX(p.x + p.width / 2);
+      const py = feetY + (p.height * U * HERO_SCALE) / 2;
+      const isFlash = (p.parryFlashTimer ?? 0) > 0;
+      const shieldColor = isFlash ? '#ffffff' : '#38bdf8';
+      this.rings.add(px, py, 0, 1.6, 1.6, 0.5, '#facc15', 0, 0, frame * 0.18);
+      this.rings.add(px, py, 0, 1.3, 1.3, 0.4, shieldColor, Math.PI / 3, 0, -frame * 0.15);
+      this.glowSpheres.add(px, py, 0, isFlash ? 0.65 : 0.38, isFlash ? 0.65 : 0.38, isFlash ? 0.65 : 0.38, shieldColor);
+    }
+
     return true;
   }
 

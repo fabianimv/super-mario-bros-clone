@@ -287,19 +287,34 @@ export interface LowGravZone {
 }
 
 // ============================================================================
-// OBJETIVOS POR NIVEL (Fase 2)
+// OBJETIVOS POR NIVEL (Plomero Brawl)
 // ============================================================================
+export type StageObjectiveKind =
+  | 'brawl_captain'
+  | 'bounty_hunt'
+  | 'core_breaker'
+  | 'shadow_combo'
+  | 'time_attack'
+  | 'chase'
+  | 'fortune'
+  | 'reach';
+
 export type StageObjective =
-  | 'reach' // Llegar a la meta
-  | 'collect' // Juntar todas las gemas para abrir la meta
-  | 'time_attack' // Contrarreloj con relojes que suman tiempo
-  | 'chase' // Escapar de la sombra que avanza
-  | 'fortune' // Mundo 6: abrir la meta alcanzando un capital de monedas (apostando)
-  | 'recover'; // Mundo 7: mantener N gemas simultáneas; un ladrón las roba (suma cero)
+  | StageObjectiveKind
+  | 'collect' // @deprecated - compatibilidad temporal con nonlinearBuilder.ts hasta Ola 1C
+  | 'recover'; // @deprecated
+
+export type PickupKind =
+  | 'clock'
+  | 'key'
+  | 'treasure'
+  | 'portal'
+  | 'p_switch'
+  | 'gem'; // @deprecated - compatibilidad temporal hasta Ola 2 (skiaRenderer / scene3d)
 
 export interface Pickup {
   id: number;
-  kind: 'gem' | 'clock' | 'key' | 'treasure' | 'portal';
+  kind: PickupKind;
   x: number;
   y: number;
   width: number;
@@ -329,6 +344,9 @@ export interface Wrench {
   spin: number;
   carryId: number | null;
   hitBoss: boolean;
+  dmg?: number;
+  fury?: boolean;
+  piercing?: boolean;
 }
 
 export interface CrumbledBlock {
@@ -385,6 +403,13 @@ export interface Enemy {
   shellCombo: number;
   animTimer: number;
   active: boolean;
+  // Super Plomero Brawl (Vida, Aturdimiento, Rol de Combate, Físicas de Proyectil)
+  maxHp?: number;
+  stunTimer?: number;
+  brawlRole?: 'grunt' | 'captain' | 'bounty_commander' | 'shadow_rival' | 'core_crystal' | 'dojo_master';
+  knockbackVx?: number;
+  launchedByPlayer?: boolean;
+  shieldFront?: boolean;
 }
 
 export interface BossFireWave {
@@ -610,6 +635,21 @@ export interface Player {
   /** Frames restantes de deslizamiento por el suelo. */
   slideTimer?: number;
   springJumping?: boolean;
+  // Super Plomero Brawl (Combate Melee, Ground Pound, Parry, Furia)
+  comboStep?: 0 | 1 | 2 | 3;
+  comboTimer?: number;
+  meleeTimer?: number;
+  meleeHitIds?: number[];
+  groundPounding?: boolean;
+  groundPoundDelay?: number;
+  shockwaveTimer?: number;
+  shockwaveX?: number;
+  shockwaveY?: number;
+  parryTimer?: number;
+  parryCooldown?: number;
+  parryFlashTimer?: number;
+  furyMeter?: number; // 0..100
+  furyTimer?: number; // 0..480 frames
 }
 
 export type WorldStatus =
@@ -624,6 +664,14 @@ export type WorldStatus =
   | 'dying'
   | 'gameover'
   | 'victory';
+
+export interface EchoFrame {
+  x: number;
+  y: number;
+  melee?: boolean;
+  groundPound?: boolean;
+  facing?: 1 | -1;
+}
 
 export interface MainStageSnapshot {
   worldLabel: string;
@@ -660,14 +708,16 @@ export interface MainStageSnapshot {
   pickups?: Pickup[];
   gemsNeeded?: number;
   gemsCollected?: number;
+  pSwitchTimer?: number;
+  goalSealBroken?: boolean;
   chase?: ChaseWall | null;
   hasKey?: boolean;
   vaultOpened?: boolean;
   wagerAltars?: Array<{ id: number; x: number; y: number; stake: number; resolved: boolean; won: boolean }>;
   fortuneTarget?: number;
   recoverTarget?: number;
-  echo?: { x: number; y: number } | null;
-  echoTrail?: Array<{ x: number; y: number }>;
+  echo?: EchoFrame | null;
+  echoTrail?: EchoFrame[];
   shafts?: Array<{ x: number; y: number; hinted: boolean }>;
   risingHazardY?: number | null;
   risingHazardSpeed?: number;
@@ -676,6 +726,11 @@ export interface MainStageSnapshot {
   onOffState?: 'on' | 'off';
   cameraMode?: 'side' | 'corridor3d';
   arenaWave?: ArenaWaveState | null;
+  brawlTargetsTotal?: number;
+  brawlTargetsDefeated?: number;
+  arenaLockX?: number;
+  arenaLockActive?: boolean;
+  arenaGoTimer?: number;
   exitX: number;
   exitY: number;
 }
@@ -818,6 +873,8 @@ export interface WorldState {
   pickups?: Pickup[];
   gemsNeeded?: number;
   gemsCollected?: number;
+  pSwitchTimer?: number;
+  goalSealBroken?: boolean;
   chase?: ChaseWall | null;
   goalBlockedTimer?: number;
   // Secretos (Fase 3)
@@ -831,8 +888,8 @@ export interface WorldState {
   // Mundo 7 ESPECTRO: gemas objetivo (el ladrón las roba)
   recoverTarget?: number;
   // Mundo 8 ECO: reflejo del jugador y su rastro
-  echo?: { x: number; y: number } | null;
-  echoTrail?: Array<{ x: number; y: number }>;
+  echo?: EchoFrame | null;
+  echoTrail?: EchoFrame[];
   // Habilidades (Fase 4)
   wrench?: Wrench | null;
   shafts?: Array<{ x: number; y: number; hinted: boolean }>;
@@ -849,4 +906,14 @@ export interface WorldState {
   activeWarpPipe?: Pipe | null;
   cameraMode?: 'side' | 'corridor3d';
   arenaWave?: ArenaWaveState | null;
+  // Super Plomero Brawl (Arenas, Asedios, Objetivos y Eco de Combate)
+  brawlTargetsTotal?: number;
+  brawlTargetsDefeated?: number;
+  echoAttackPulse?: number;
+  echoAttackX?: number;
+  echoAttackY?: number;
+  echoAttackFacing?: 1 | -1;
+  arenaLockX?: number;
+  arenaLockActive?: boolean;
+  arenaGoTimer?: number;
 }

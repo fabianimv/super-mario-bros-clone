@@ -1232,3 +1232,69 @@ export function buildFortressArena(
 
   return { arenaWidth, boss };
 }
+
+/**
+ * Explanada de combate multi-plataforma (Super Plomero Brawl).
+ * Construye una plaza de pelea con suelo sólido continuo, muros de rebote bajos
+ * (Wall Bounce) en los extremos y plataformas laterales de flanqueo en row 9.
+ * Cumple estrictamente consecutiveGap <= 4 y no afecta negativamente la diversidad Jaccard.
+ */
+export function buildBrawlArenaPlaza(
+  ctx: BuilderCtx,
+  col: number,
+  width = 18,
+  style = 0
+): void {
+  // 1. Suelo sólido continuo sin fosos (consecutiveGap = 0)
+  for (let c = col; c < col + width; c++) {
+    putBlock(ctx, c, GROUND_ROW, 'ground_top');
+    putBlock(ctx, c, GROUND_ROW + 1, 'ground_deep');
+  }
+
+  // 2. Muros de rebote bajos (Wall Bounce) en los extremos
+  // Altura de 2 bloques en los bordes para permitir wall-jump y rebote de enemigos lanzados
+  putBlock(ctx, col, GROUND_ROW - 1, 'hard');
+  putBlock(ctx, col, GROUND_ROW - 2, 'hard');
+  putBlock(ctx, col + width - 1, GROUND_ROW - 1, 'hard');
+  putBlock(ctx, col + width - 1, GROUND_ROW - 2, 'hard');
+
+  // 3. Plataformas laterales de flanqueo en row 9
+  // Plataforma izquierda (cols col+2 .. col+5)
+  for (let c = col + 2; c <= col + 5; c++) {
+    putBlock(ctx, c, 9, 'brick');
+  }
+  // Plataforma derecha (cols col+width-6 .. col+width-3)
+  for (let c = col + width - 6; c <= col + width - 3; c++) {
+    putBlock(ctx, c, 9, 'brick');
+  }
+
+  // 4. Elementos centrales variables según style
+  const mid = col + Math.floor(width / 2);
+  switch (style % 4) {
+    case 0:
+      // Tarima central elevada en row 6 con bloque sorpresa
+      for (let c = mid - 2; c <= mid + 1; c++) {
+        putBlock(ctx, c, 6, 'hard');
+      }
+      putBlock(ctx, mid, 6, 'question', 'powerup');
+      break;
+    case 1:
+      // Plataforma con bloque interruptor ON/OFF para dinámicas de arena
+      for (let c = mid - 2; c <= mid + 1; c++) {
+        putBlock(ctx, c, 7, 'on_block');
+      }
+      putBlock(ctx, mid, 5, 'on_off_switch');
+      break;
+    case 2:
+      // Plataforma central de bloques giratorios (rotating)
+      for (let c = mid - 2; c <= mid + 1; c++) {
+        putBlock(ctx, c, 6, 'rotating');
+      }
+      break;
+    case 3:
+      // Trampolín central y peldaño superior para combate aéreo
+      addSpring(ctx, mid - 1, GROUND_ROW);
+      putBlock(ctx, mid + 1, 6, 'hard');
+      break;
+  }
+}

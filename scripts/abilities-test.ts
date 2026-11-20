@@ -237,13 +237,12 @@ assert(shafts >= 20, `Debe haber chimeneas en la mayoría de los niveles (hay ${
   g.player.x = 10 * TILE;
   g.player.y = GROUND_ROW * TILE - g.player.height;
   g.player.facing = 1;
-  g.objective = 'collect';
-  g.gemsNeeded = 1;
-  g.gemsCollected = 0;
-  g.pickups = [{ id: 7, kind: 'gem', x: 14 * TILE, y: g.player.y + 4, width: 20, height: 24, collected: false, phase: 0 }];
+  g.objective = 'time_attack';
+  g.timeLeft = 50;
+  g.pickups = [{ id: 7, kind: 'clock', x: 14 * TILE, y: g.player.y + 4, width: 20, height: 24, collected: false, phase: 0 }];
   step(g, { fire: true });
   for (let f = 0; f < 90; f++) step(g);
-  assert(g.gemsCollected === 1, 'La llave trae la gema hasta el plomero');
+  assert(g.timeLeft > 50, 'La llave trae el reloj hasta el plomero');
 
   const f2 = flatWorld();
   f2.player.powerState = 2;

@@ -312,18 +312,12 @@ export const ArcadeTouchControls: React.FC<Props> = ({
 
   const xLabel = mountedYoshi
     ? 'LENGUA'
-    : powerState === 3
-    ? 'CAPA'
-    : powerState === 2
-    ? 'FUEGO'
-    : 'LLAVE';
+    : 'COMBO';
   const yLabel = mountedYoshi
     ? 'LENGUA'
     : partition === 'flip'
     ? 'GRAV'
-    : partition === 'smw'
-    ? 'GIRO'
-    : 'ATAQUE';
+    : 'PARRY';
 
   return (
     <View
@@ -417,38 +411,36 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         ]}
       />
 
-      {/* Y Button: Yoshi Tongue / SMW Spin Jump / Gravity Flip */}
-      {(partition === 'smw' || partition === 'flip' || mountedYoshi) && (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.spinBtn,
-            mountedYoshi
-              ? styles.spinBtnYoshi
-              : partition === 'flip'
-              ? styles.spinBtnFlip
-              : styles.spinBtnSmw,
-            pressed.spin && styles.btnDepressed,
-            {
-              width: auxRadius * 2,
-              height: auxRadius * 2,
-              borderRadius: auxRadius,
-              left: spinCenterX - auxRadius,
-              top: spinCenterY - auxRadius,
-            },
-          ]}
-        >
-          <Text style={styles.auxBtnText}>Y</Text>
-          <Text style={styles.btnSubLabel}>{yLabel}</Text>
-        </View>
-      )}
+      {/* Y Button: Parry / Gravity Flip / Yoshi Tongue */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.spinBtn,
+          mountedYoshi
+            ? styles.spinBtnYoshi
+            : partition === 'flip'
+            ? styles.spinBtnFlip
+            : styles.spinBtnSmw,
+          pressed.spin && styles.btnDepressed,
+          {
+            width: auxRadius * 2,
+            height: auxRadius * 2,
+            borderRadius: auxRadius,
+            left: spinCenterX - auxRadius,
+            top: spinCenterY - auxRadius,
+          },
+        ]}
+      >
+        <Text style={styles.auxBtnText}>Y</Text>
+        <Text style={styles.btnSubLabel}>{yLabel}</Text>
+      </View>
 
-      {/* X Button: Cape Whip / Fireball / Yoshi Tongue */}
+      {/* X Button: Melee Combo / Fireball / Cape Whip / Yoshi Tongue */}
       <View
         pointerEvents="none"
         style={[
           styles.fireBtn,
-          powerState >= 2 || mountedYoshi ? styles.fireBtnArmed : styles.fireBtnDim,
+          styles.fireBtnArmed,
           pressed.fire && styles.btnDepressed,
           {
             width: auxRadius * 2,

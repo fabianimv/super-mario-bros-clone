@@ -238,6 +238,33 @@ export function buildTowerWorldState(
     }
   }
 
+  // 3b. Guardianes del Dojo de los 100 Pisos (dojo_master)
+  // En los descansos clave de la torre (cada ~20 filas de subida), asigna brawlRole: 'dojo_master', hp: 3, maxHp: 3
+  // a 3 guardianes para que al derrotarlos bajen el magma (risingHazardY += 6 * TILE) y den impulso.
+  const targetRestRows = [worldRows - 20, worldRows - 40, worldRows - 60];
+  const chosenDojos = new Set<Enemy>();
+
+  for (const targetRow of targetRestRows) {
+    const targetY = targetRow * TILE;
+    let bestEn: Enemy | null = null;
+    let bestDist = Infinity;
+    for (const en of ctx.enemies) {
+      if (chosenDojos.has(en)) continue;
+      const dist = Math.abs(en.y - targetY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestEn = en;
+      }
+    }
+    if (bestEn) {
+      chosenDojos.add(bestEn);
+      bestEn.brawlRole = 'dojo_master';
+      bestEn.hp = 3;
+      bestEn.maxHp = 3;
+      if (bestEn.type === 'galoomba') bestEn.type = 'chuck';
+    }
+  }
+
   // 4. Midpoint Checkpoint and Exit Pipe at checkpointRow
   clearArea(ctx, 9, 18, checkpointRow - 3, checkpointRow);
   for (let c = 9; c <= 18; c++) {
@@ -434,6 +461,8 @@ export function buildTowerWorldState(
     doubleJumpAssist: carryState?.doubleJumpAssist ?? false,
     nextEntityId: ctx.nextId,
     objective: 'reach',
+    brawlTargetsTotal: 3,
+    brawlTargetsDefeated: 0,
   };
 }
 
@@ -687,30 +716,84 @@ export function buildFlipWorldState(
     };
   }
 
-  // 8. Gems (Objective: 'collect', 3..5 gems distributed in chambers and ceiling)
-  const gemsNeeded = 3 + (clampedIdx % 3); // 3, 4, 5
-  const gemPositions: Array<{ col: number; row: number }> = [
-    { col: 10, row: 6 }, // Left Upper Chamber
-    { col: 42, row: 20 }, // Right Lower Chamber
-    { col: 24, row: 3 }, // Nexo Inverted Ceiling
-    { col: 45, row: 6 }, // Right Upper Chamber
-    { col: 8, row: 20 }, // Left Lower Chamber
-  ];
-
+  // 8. Núcleos Gravitacionales Blindados (Super Plomero Brawl - Objetivo: 'core_breaker')
+  // 100% CERO GEMAS: 3 Núcleos Blindados (Ala Izquierda, Techo Invertido, Ala Derecha)
   const pickups: Pickup[] = [];
-  for (let i = 0; i < gemsNeeded; i++) {
-    const pos = gemPositions[i];
-    pickups.push({
-      id: ctx.nextId++,
-      kind: 'gem',
-      x: pos.col * TILE + 6,
-      y: pos.row * TILE + 4,
-      width: 20,
-      height: 24,
-      collected: false,
-      phase: pos.col * 0.37,
-    });
-  }
+
+  // Núcleo 1: Ala Izquierda (suelo normal)
+  ctx.enemies.push({
+    id: ctx.nextId++,
+    type: 'spiny',
+    state: 'walk',
+    x: 10 * TILE + 2,
+    y: 24 * TILE - 28,
+    baseY: 24 * TILE - 28,
+    vx: 0,
+    vy: 0,
+    width: 28,
+    height: 28,
+    facing: 1,
+    onGround: true,
+    hp: 3,
+    maxHp: 3,
+    stateTimer: 0,
+    kickGraceTimer: 0,
+    shellCombo: 0,
+    animTimer: 0,
+    active: true,
+    brawlRole: 'core_crystal',
+    shieldFront: false,
+  });
+
+  // Núcleo 2: Techo Invertido (para destruir con Ground Pound invertido o Combo invertido)
+  ctx.enemies.push({
+    id: ctx.nextId++,
+    type: 'spiny',
+    state: 'walk',
+    x: 24 * TILE + 2,
+    y: 3 * TILE,
+    baseY: 3 * TILE,
+    vx: 0,
+    vy: 0,
+    width: 28,
+    height: 28,
+    facing: 1,
+    onGround: true,
+    hp: 3,
+    maxHp: 3,
+    stateTimer: 0,
+    kickGraceTimer: 0,
+    shellCombo: 0,
+    animTimer: 0,
+    active: true,
+    brawlRole: 'core_crystal',
+    shieldFront: false,
+  });
+
+  // Núcleo 3: Ala Derecha (suelo normal)
+  ctx.enemies.push({
+    id: ctx.nextId++,
+    type: 'spiny',
+    state: 'walk',
+    x: 42 * TILE + 2,
+    y: 24 * TILE - 28,
+    baseY: 24 * TILE - 28,
+    vx: 0,
+    vy: 0,
+    width: 28,
+    height: 28,
+    facing: -1,
+    onGround: true,
+    hp: 3,
+    maxHp: 3,
+    stateTimer: 0,
+    kickGraceTimer: 0,
+    shellCombo: 0,
+    animTimer: 0,
+    active: true,
+    brawlRole: 'core_crystal',
+    shieldFront: false,
+  });
 
   // 9. Enemies & Springs
   addEnemy(ctx, 8, 14, 'koopa_red');
@@ -805,10 +888,12 @@ export function buildFlipWorldState(
     prevSpinHeld: false,
     doubleJumpAssist: carryState?.doubleJumpAssist ?? false,
     nextEntityId: ctx.nextId,
-    objective: 'collect',
+    objective: 'core_breaker',
     pickups,
-    gemsNeeded,
+    gemsNeeded: 0,
     gemsCollected: 0,
+    brawlTargetsTotal: 3,
+    brawlTargetsDefeated: 0,
   };
 }
 
@@ -916,14 +1001,38 @@ export function buildStarRoadWorldState(
       warpLabel: '⚔ OLEADA',
     });
 
-    // Wave 1 Enemies
-    addEnemy(ctx, 6, 7, 'koopa_red');
+    // Wave 1 Enemies (zona de spawn en col 4 100% segura; enemigos ubicados en col >= 12 y flanco derecho)
     addEnemy(ctx, 19, 7, 'koopa_red');
-    addEnemy(ctx, 8, 11, 'galoomba');
     addEnemy(ctx, 16, 11, 'galoomba');
+    addEnemy(ctx, 18, 11, 'galoomba');
     if (clampedIdx >= 1) addEnemy(ctx, 12, 4, 'paratroopa');
     if (clampedIdx >= 2) addEnemy(ctx, 17, 11, 'spiny');
-    if (clampedIdx >= 3) addEnemy(ctx, 21, 11, 'chuck');
+
+    // Rival: Plomero Sombra (shadow_rival) en el flanco derecho del Coliseo (col 21)
+    const shadowHp = 6 + clampedIdx;
+    ctx.enemies.push({
+      id: ctx.nextId++,
+      type: 'chuck',
+      state: 'walk',
+      x: 21 * TILE,
+      y: 12 * TILE - 42,
+      baseY: 12 * TILE - 42,
+      vx: -1.2,
+      vy: 0,
+      width: 32,
+      height: 42,
+      facing: -1,
+      onGround: true,
+      hp: shadowHp,
+      maxHp: shadowHp,
+      stateTimer: 0,
+      kickGraceTimer: 0,
+      shellCombo: 0,
+      animTimer: 0,
+      active: true,
+      brawlRole: 'shadow_rival',
+      shieldFront: false,
+    });
 
     const arenaWave: ArenaWaveState = {
       current: 1,
@@ -1052,6 +1161,8 @@ export function buildStarRoadWorldState(
       doubleJumpAssist: carryState?.doubleJumpAssist ?? false,
       nextEntityId: ctx.nextId,
       objective: 'reach',
+      brawlTargetsTotal: 1,
+      brawlTargetsDefeated: 0,
     };
   } else {
     // ------------------------------------------------------------------------

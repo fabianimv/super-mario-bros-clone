@@ -28,6 +28,8 @@ export interface HudSnapshot {
   onOffState?: 'on' | 'off';
   subArea?: 'subroom' | 'warp_zone' | null;
   arenaWave?: { current: number; total: number } | null;
+  furyMeter?: number;
+  furyTimer?: number;
 }
 
 interface Props {
@@ -181,13 +183,104 @@ export const HudOverlay: React.FC<Props> = ({ hud, pixelFontLoaded, onPausePress
           </View>
         )}
 
-        {hud.objective && (
-          <View style={[styles.powerPill, { backgroundColor: '#581c87' }]}>
-            <Text style={[styles.powerPillText, { fontFamily, color: '#f5d0fe' }]}>
-              {hud.objective}
+        {((hud.furyTimer ?? 0) > 0 || (hud.furyMeter ?? 0) > 0) && (
+          <View
+            style={[
+              styles.furyPill,
+              (hud.furyTimer ?? 0) > 0 && styles.furyPillActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.powerPillText,
+                { fontFamily, color: (hud.furyTimer ?? 0) > 0 ? '#fef08a' : '#fca5a5' },
+              ]}
+            >
+              {(hud.furyTimer ?? 0) > 0
+                ? '🔥 ¡FURIA!'
+                : `🔥 FURIA ${Math.round(hud.furyMeter ?? 0)}%`}
             </Text>
+            <View style={styles.furyTrack}>
+              <View
+                style={[
+                  styles.furyFill,
+                  {
+                    width:
+                      (hud.furyTimer ?? 0) > 0
+                        ? '100%'
+                        : `${Math.max(0, Math.min(100, hud.furyMeter ?? 0))}%`,
+                    backgroundColor: (hud.furyTimer ?? 0) > 0 ? '#facc15' : '#ef4444',
+                  },
+                ]}
+              />
+            </View>
           </View>
         )}
+
+        {hud.objective && (() => {
+          const isSprintOrMeta =
+            hud.objective.startsWith('⚡ SPRINT') ||
+            hud.objective.startsWith('⚡ META') ||
+            hud.objective.startsWith('⚔ ¡META LIBRE!');
+          const isCaptain = hud.objective.startsWith('⚔');
+          const isBounty = hud.objective.startsWith('🎯');
+          const isCore = hud.objective.startsWith('💥');
+          const isEcho = hud.objective.startsWith('🪞');
+          const isTime = hud.objective.startsWith('⏱');
+          const isChase = hud.objective.startsWith('👁');
+          const isFortune = hud.objective.startsWith('🪙');
+
+          const pillBg = isSprintOrMeta
+            ? '#eab308'
+            : isCaptain
+            ? '#b91c1c'
+            : isBounty
+            ? '#7e22ce'
+            : isCore
+            ? '#0369a1'
+            : isEcho
+            ? '#6d28d9'
+            : isTime
+            ? '#ca8a04'
+            : isChase
+            ? '#9333ea'
+            : isFortune
+            ? '#d97706'
+            : '#581c87';
+
+          const pillBorder = isSprintOrMeta
+            ? '#fef08a'
+            : isCaptain
+            ? '#f87171'
+            : isBounty
+            ? '#c084fc'
+            : isCore
+            ? '#38bdf8'
+            : isEcho
+            ? '#a78bfa'
+            : isTime
+            ? '#fde047'
+            : isChase
+            ? '#f0abfc'
+            : isFortune
+            ? '#fde68a'
+            : '#ffffff';
+
+          const textColor = isSprintOrMeta ? '#1c1917' : '#ffffff';
+
+          return (
+            <View
+              style={[
+                styles.powerPill,
+                { backgroundColor: pillBg, borderColor: pillBorder },
+              ]}
+            >
+              <Text style={[styles.powerPillText, { fontFamily, color: textColor }]}>
+                {hud.objective}
+              </Text>
+            </View>
+          );
+        })()}
 
         {hud.keyHeld && (
           <View style={[styles.powerPill, { backgroundColor: '#a16207' }]}>
@@ -385,6 +478,32 @@ const styles = StyleSheet.create({
   powerPillText: {
     fontSize: 7,
     fontWeight: '900',
+  },
+  furyPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#ef4444',
+    backgroundColor: 'rgba(69, 10, 10, 0.88)',
+    alignItems: 'center',
+    gap: 2,
+    minWidth: 64,
+  },
+  furyPillActive: {
+    borderColor: '#facc15',
+    backgroundColor: 'rgba(153, 27, 27, 0.95)',
+  },
+  furyTrack: {
+    width: '100%',
+    height: 3,
+    backgroundColor: '#1f0404',
+    borderRadius: 1.5,
+    overflow: 'hidden',
+  },
+  furyFill: {
+    height: '100%',
+    borderRadius: 1.5,
   },
   rightCluster: {
     flexDirection: 'row',

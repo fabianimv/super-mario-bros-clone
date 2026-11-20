@@ -85,15 +85,23 @@ for (const [part, total] of ALL_MODES) {
   sc.sync(chase, W, H);
   assert(finiteScene(sc.scene), 'La sombra se dibuja sin errores');
 
-  const w = buildWorldState(1, undefined, 'dimension'); // J-2: gemas
+  const w = buildWorldState(2, undefined, 'dimension'); // J-3: contrarreloj con relojes
   const before = (() => {
     sc.sync(w, W, H);
     return sc.lastStats.pickups;
   })();
-  const gem = w.pickups!.find((p) => p.kind === 'gem')!;
-  w.cameraX = gem.x - VIEW_W / 2;
+  const clock = w.pickups!.find((p) => p.kind === 'clock')!;
+  assert(clock, 'Dimensión J-3 tiene relojes de contrarreloj');
+  w.cameraX = clock.x - VIEW_W / 2;
   sc.sync(w, W, H);
-  assert(sc.lastStats.pickups >= 1, `Las gemas se dibujan cerca de la cámara (antes ${before})`);
+  assert(sc.lastStats.pickups >= 1, `Los relojes de contrarreloj se dibujan cerca de la cámara (antes ${before})`);
+
+  const capWorld = buildWorldState(1, undefined, 'dimension'); // J-2: brawl_captain
+  const captain = capWorld.enemies.find((e) => e.brawlRole === 'captain')!;
+  assert(captain, 'Dimensión J-2 tiene Capitán Guardián');
+  capWorld.cameraX = captain.x - VIEW_W / 2;
+  sc.sync(capWorld, W, H);
+  assert(sc.lastStats.enemies >= 1 && finiteScene(sc.scene), 'El capitán guardián 3D se dibuja cerca de la cámara');
 
   const boss = buildWorldState(3, undefined, 'dimension');
   boss.cameraX = boss.boss!.x - VIEW_W / 2;
