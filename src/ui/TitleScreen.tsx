@@ -14,6 +14,7 @@ interface Props {
   onContinue: () => void;
   onOpenWorldSelect: () => void;
   onOpenSettings: () => void;
+  onQuickLaunchCityChaos?: () => void;
 }
 
 export const TitleScreen: React.FC<Props> = ({
@@ -25,6 +26,7 @@ export const TitleScreen: React.FC<Props> = ({
   onContinue,
   onOpenWorldSelect,
   onOpenSettings,
+  onQuickLaunchCityChaos,
 }) => {
   const insets = useSafeAreaInsets();
   const fontFamily = pixelFontLoaded ? 'PressStart2P_400Regular' : undefined;
@@ -109,16 +111,15 @@ export const TitleScreen: React.FC<Props> = ({
         <View style={[styles.partitionBar, styles.partitionBarNonlinear]}>
           {NONLINEAR_PARTITIONS.map((part) => {
             const active = part === partition;
-            const isLocked = false;
+            const isCity = part === 'city_chaos';
             return (
               <Pressable
                 key={part}
-                disabled={isLocked}
                 onPress={() => onSelectPartition(part)}
                 style={[
                   styles.partitionTab,
                   styles.partitionTabNonlinear,
-                  isLocked && styles.partitionTabLocked,
+                  isCity && styles.partitionTabCityChaos,
                   active && { backgroundColor: PARTITION_INFO[part].accent },
                   active && styles.partitionTabNonlinearActive,
                 ]}
@@ -127,12 +128,12 @@ export const TitleScreen: React.FC<Props> = ({
                   style={[
                     styles.partitionTabText,
                     styles.partitionTabTextNonlinear,
+                    isCity && styles.partitionTabTextCityChaos,
                     { fontFamily },
-                    isLocked && { color: '#94a3b8' },
                     active && styles.partitionTabTextActive,
                   ]}
                 >
-                  {isLocked ? '🔒 🌟 SENDA ESTELAR' : PARTITION_INFO[part].tab}
+                  {PARTITION_INFO[part].tab}
                 </Text>
               </Pressable>
             );
@@ -150,6 +151,8 @@ export const TitleScreen: React.FC<Props> = ({
           partition === 'tower' && styles.signBoardTower,
           partition === 'flip' && styles.signBoardFlip,
           partition === 'star_road' && styles.signBoardStarRoad,
+          partition === 'odyssey' && styles.signBoardOdyssey,
+          partition === 'city_chaos' && styles.signBoardCityChaos,
         ]}
       >
         <View style={styles.rivetRow}>
@@ -192,12 +195,35 @@ export const TitleScreen: React.FC<Props> = ({
 
         <Pressable
           onPress={onStartAdventure}
-          style={({ pressed }) => [styles.btnPrimaryGold, pressed && styles.btnPressed]}
+          style={({ pressed }) => [
+            partition === 'city_chaos' ? styles.btnPrimaryCrimson : styles.btnPrimaryGold,
+            pressed && styles.btnPressed,
+          ]}
         >
-          <Text style={[styles.btnDarkText, { fontFamily }]}>
-            {hasSavedStage ? 'NUEVA PARTIDA' : `▶ JUGAR ${info.firstStage}`}
+          <Text
+            style={[
+              partition === 'city_chaos' ? styles.btnPrimaryText : styles.btnDarkText,
+              { fontFamily },
+            ]}
+          >
+            {partition === 'city_chaos'
+              ? '🏎️ ▶ JUGAR CIUDAD CAOS'
+              : hasSavedStage
+              ? 'NUEVA PARTIDA'
+              : `▶ JUGAR ${info.firstStage}`}
           </Text>
         </Pressable>
+
+        {partition !== 'city_chaos' && onQuickLaunchCityChaos && (
+          <Pressable
+            onPress={onQuickLaunchCityChaos}
+            style={({ pressed }) => [styles.btnPrimaryCrimson, pressed && styles.btnPressed]}
+          >
+            <Text style={[styles.btnPrimaryText, { fontFamily }]}>
+              🏎️ CIUDAD CAOS
+            </Text>
+          </Pressable>
+        )}
 
         <Pressable
           onPress={onOpenWorldSelect}
@@ -332,6 +358,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#713f12',
     borderColor: '#fde047',
   },
+  signBoardOdyssey: {
+    backgroundColor: '#083344',
+    borderColor: '#22d3ee',
+  },
+  signBoardCityChaos: {
+    backgroundColor: '#881337',
+    borderColor: '#f43f5e',
+  },
   partitionBarNonlinear: {
     marginTop: 0,
     marginBottom: 0,
@@ -341,6 +375,14 @@ const styles = StyleSheet.create({
     minWidth: 140,
     borderWidth: 1,
     borderColor: '#eab308',
+  },
+  partitionTabCityChaos: {
+    borderWidth: 2,
+    borderColor: '#f43f5e',
+    backgroundColor: 'rgba(136, 19, 55, 0.55)',
+  },
+  partitionTabTextCityChaos: {
+    color: '#ffe4e6',
   },
   partitionTabNonlinearActive: {
     borderColor: '#fef08a',
@@ -435,6 +477,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 11,
     shadowColor: '#052e16',
+    shadowOpacity: 1,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  btnPrimaryCrimson: {
+    backgroundColor: '#e11d48',
+    borderWidth: 3,
+    borderColor: '#fecdd3',
+    borderRadius: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 11,
+    shadowColor: '#4c0519',
     shadowOpacity: 1,
     shadowRadius: 0,
     shadowOffset: { width: 0, height: 4 },

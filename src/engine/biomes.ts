@@ -185,6 +185,21 @@ export const ODYSSEY_METAS: StageMeta[] = [
   },
 ];
 
+// Ciudad Caos (Mundo Abierto GTA Top-Down — 1 nivel sandbox)
+export const CITY_CHAOS_WORLDS = 1;
+export const CITY_CHAOS_TOTAL_LEVELS = 1;
+export const CITY_CHAOS_STAGE_CODES = ['C-1'];
+export const CITY_CHAOS_STAGE_NAMES = ['CIUDAD CAOS'];
+export const CITY_CHAOS_METAS: StageMeta[] = [
+  {
+    code: 'C-1',
+    name: 'CIUDAD CAOS',
+    biome: 'starfield',
+    bgm: 'dim_theme',
+    isBoss: false,
+  },
+];
+
 /** Cantidad de niveles de cada modo. */
 export function partitionTotalLevels(partition: GamePartition): number {
   switch (partition) {
@@ -210,6 +225,8 @@ export function partitionTotalLevels(partition: GamePartition): number {
       return STAR_ROAD_TOTAL_LEVELS;
     case 'odyssey':
       return ODYSSEY_TOTAL_LEVELS;
+    case 'city_chaos':
+      return CITY_CHAOS_TOTAL_LEVELS;
     default:
       return TOTAL_LEVELS;
   }
@@ -1068,6 +1085,9 @@ export function getWorldLabel(levelIndex: number, partition: GamePartition = 'cl
     const clamped = Math.max(0, Math.min(ODYSSEY_STAGE_CODES.length - 1, levelIndex));
     return ODYSSEY_STAGE_CODES[clamped] ?? 'O-1';
   }
+  if (partition === 'city_chaos') {
+    return 'C-1';
+  }
   return `${worldNum}-${stageNum}`;
 }
 
@@ -1075,6 +1095,9 @@ export function getStageMeta(levelIndex: number, partition: GamePartition = 'cla
   if (partition === 'odyssey') {
     const clamped = Math.max(0, Math.min(ODYSSEY_METAS.length - 1, levelIndex));
     return ODYSSEY_METAS[clamped];
+  }
+  if (partition === 'city_chaos') {
+    return CITY_CHAOS_METAS[0];
   }
   const code = getWorldLabel(levelIndex, partition);
   const biome = getStageBiome(levelIndex, partition);
@@ -1093,6 +1116,10 @@ export function getStageMeta(levelIndex: number, partition: GamePartition = 'cla
 export function getStageBiome(levelIndex: number, partition: GamePartition = 'classic'): BiomeId {
   const worldNum = Math.floor(levelIndex / STAGES_PER_WORLD) + 1;
   const stageNum = (levelIndex % STAGES_PER_WORLD) + 1;
+
+  if (partition === 'city_chaos') {
+    return 'starfield';
+  }
 
   if (partition === 'odyssey') {
     if (levelIndex === 0) return 'clockwork';

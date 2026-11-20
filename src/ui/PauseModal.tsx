@@ -71,6 +71,8 @@ export const PauseModal: React.FC<PauseProps> = ({
           partition === 'tower' && { borderColor: '#f97316' },
           partition === 'flip' && { borderColor: '#a855f7' },
           partition === 'star_road' && { borderColor: '#eab308' },
+          partition === 'odyssey' && { borderColor: '#06b6d4' },
+          partition === 'city_chaos' && { borderColor: '#f43f5e' },
         ]}
       >
         <Text style={[styles.title, { fontFamily }]}>
@@ -95,6 +97,10 @@ export const PauseModal: React.FC<PauseProps> = ({
               ? 'PAUSA • TEMPLO INVERSO'
               : partition === 'star_road'
               ? 'PAUSA • SENDA ESTELAR'
+              : partition === 'odyssey'
+              ? 'PAUSA • ODISEA ABIERTA'
+              : partition === 'city_chaos'
+              ? 'PAUSA • CIUDAD CAOS'
               : 'PAUSA • PLOMERO BROS'
             : 'AJUSTES ARCADE'}
         </Text>

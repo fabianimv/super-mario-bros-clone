@@ -7,7 +7,7 @@ import { partitionTotalLevels } from './biomes';
 import type { GamePartition, SaveProgress } from './types';
 
 export const PARTITION_ORDER: GamePartition[] = ['classic', 'smw', 'expedition', 'frontier', 'fortune', 'mirage', 'echo', 'dimension'];
-export const NONLINEAR_PARTITIONS: GamePartition[] = ['odyssey', 'tower', 'flip', 'star_road'];
+export const NONLINEAR_PARTITIONS: GamePartition[] = ['city_chaos', 'odyssey', 'tower', 'flip', 'star_road'];
 export const ALL_PARTITIONS: GamePartition[] = [...PARTITION_ORDER, ...NONLINEAR_PARTITIONS];
 
 export interface PartitionInfo {
@@ -183,6 +183,19 @@ export const PARTITION_INFO: Record<GamePartition, PartitionInfo> = {
     accent: '#06b6d4',
     subtitleColor: '#a5f3fc',
   },
+  city_chaos: {
+    title: 'CIUDAD CAOS',
+    chip: '🏎️ CIUDAD CAOS',
+    tab: '🏎️ CIUDAD CAOS',
+    edition: 'JUEGO NUEVO • MUNDO ABIERTO TOP-DOWN GTA',
+    subtitle: 'MUNDO ABIERTO • AUTOS, DRIFT Y MISIONES',
+    worldsLabel: 'CIUDAD ABIERTA',
+    worldNoun: 'CIUDAD',
+    firstStage: 'C-1',
+    hint: 'Y: Subir/Bajar de Autos  •  A: Nitro/Dash  •  B: Drift  •  X: Cañón/Arma',
+    accent: '#f43f5e',
+    subtitleColor: '#fecdd3',
+  },
 };
 
 export interface PartitionProgress {
@@ -195,10 +208,16 @@ export interface PartitionProgress {
 
 export function getPartitionProgress(prog: SaveProgress, part: GamePartition): PartitionProgress {
   const total = partitionTotalLevels(part);
+  const maxLvl = Math.max(0, total - 1);
+  const unlockLevel = (saved: number | undefined) => {
+    const s = saved ?? 0;
+    return prog.allUnlocked ? Math.max(s, maxLvl) : s;
+  };
+
   if (part === 'smw') {
     return {
       highScore: prog.smwHighScore,
-      unlocked: prog.smwUnlockedLevel,
+      unlocked: unlockLevel(prog.smwUnlockedLevel),
       cleared: prog.smwClearedLevels,
       best: prog.smwBestStageScores,
       total,
@@ -207,7 +226,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'dimension') {
     return {
       highScore: prog.dimHighScore ?? 0,
-      unlocked: prog.dimUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.dimUnlockedLevel),
       cleared: prog.dimClearedLevels ?? [],
       best: prog.dimBestStageScores ?? {},
       total,
@@ -216,7 +235,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'expedition') {
     return {
       highScore: prog.expHighScore ?? 0,
-      unlocked: prog.expUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.expUnlockedLevel),
       cleared: prog.expClearedLevels ?? [],
       best: prog.expBestStageScores ?? {},
       total,
@@ -225,7 +244,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'frontier') {
     return {
       highScore: prog.frontierHighScore ?? 0,
-      unlocked: prog.frontierUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.frontierUnlockedLevel),
       cleared: prog.frontierClearedLevels ?? [],
       best: prog.frontierBestStageScores ?? {},
       total,
@@ -234,7 +253,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'fortune') {
     return {
       highScore: prog.fortuneHighScore ?? 0,
-      unlocked: prog.fortuneUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.fortuneUnlockedLevel),
       cleared: prog.fortuneClearedLevels ?? [],
       best: prog.fortuneBestStageScores ?? {},
       total,
@@ -243,7 +262,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'mirage') {
     return {
       highScore: prog.mirageHighScore ?? 0,
-      unlocked: prog.mirageUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.mirageUnlockedLevel),
       cleared: prog.mirageClearedLevels ?? [],
       best: prog.mirageBestStageScores ?? {},
       total,
@@ -252,7 +271,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'echo') {
     return {
       highScore: prog.echoHighScore ?? 0,
-      unlocked: prog.echoUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.echoUnlockedLevel),
       cleared: prog.echoClearedLevels ?? [],
       best: prog.echoBestStageScores ?? {},
       total,
@@ -261,7 +280,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'tower') {
     return {
       highScore: prog.towerHighScore ?? 0,
-      unlocked: prog.towerUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.towerUnlockedLevel),
       cleared: prog.towerClearedLevels ?? [],
       best: prog.towerBestStageScores ?? {},
       total,
@@ -270,7 +289,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'flip') {
     return {
       highScore: prog.flipHighScore ?? 0,
-      unlocked: prog.flipUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.flipUnlockedLevel),
       cleared: prog.flipClearedLevels ?? [],
       best: prog.flipBestStageScores ?? {},
       total,
@@ -279,7 +298,7 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'star_road') {
     return {
       highScore: prog.starRoadHighScore ?? 0,
-      unlocked: prog.starRoadUnlockedLevel ?? 0,
+      unlocked: unlockLevel(prog.starRoadUnlockedLevel),
       cleared: prog.starRoadClearedLevels ?? [],
       best: prog.starRoadBestStageScores ?? {},
       total,
@@ -288,15 +307,24 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
   if (part === 'odyssey') {
     return {
       highScore: prog.odysseyHighScore ?? 0,
-      unlocked: Math.max(prog.odysseyUnlockedLevel ?? 3, 2),
+      unlocked: Math.max(prog.odysseyUnlockedLevel ?? 2, 2),
       cleared: prog.odysseyClearedLevels ?? [],
       best: prog.odysseyBestStageScores ?? {},
       total,
     };
   }
+  if (part === 'city_chaos') {
+    return {
+      highScore: prog.cityChaosHighScore ?? 0,
+      unlocked: 0,
+      cleared: prog.cityChaosClearedLevels ?? [],
+      best: prog.cityChaosBestStageScores ?? {},
+      total,
+    };
+  }
   return {
     highScore: prog.highScore,
-    unlocked: prog.unlockedLevel,
+    unlocked: unlockLevel(prog.unlockedLevel),
     cleared: prog.clearedLevels,
     best: prog.bestStageScores,
     total,
@@ -405,6 +433,15 @@ export function withPartitionProgress(
       odysseyUnlockedLevel: next.unlocked,
       odysseyClearedLevels: next.cleared,
       odysseyBestStageScores: next.best,
+    };
+  }
+  if (part === 'city_chaos') {
+    return {
+      ...prog,
+      cityChaosHighScore: next.highScore,
+      cityChaosUnlockedLevel: next.unlocked,
+      cityChaosClearedLevels: next.cleared,
+      cityChaosBestStageScores: next.best,
     };
   }
   return {

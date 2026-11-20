@@ -739,7 +739,8 @@ function advanceOrWinStage(world: WorldState, events: GameEvent[]): void {
 
   if (world.levelIndex < world.totalStagesInPartition - 1) {
     // El portal secreto salta directo al castillo del mundo
-    const nextIdx = world.warpTo ?? world.levelIndex + 1;
+    const rawNext = world.partition === 'odyssey' ? world.levelIndex + 1 : (world.warpTo ?? world.levelIndex + 1);
+    const nextIdx = Math.min(rawNext, world.totalStagesInPartition - 1);
     const carryPower = world.player.powerState;
     const carryYoshi = world.player.mountedYoshi;
     const nextWorld = buildWorldState(
@@ -1139,6 +1140,21 @@ function handleTitanDefeat(world: WorldState, en: Enemy, events: GameEvent[]): v
   spawnBrickDebris(world, en.x + en.width / 2, en.y + en.height / 2);
   spawnText(world, en.x, en.y - 20, '¡MECHA-TITÁN DESTRUIDO! +10000', '#38bdf8');
   world.goalSealBroken = true;
+
+  // Destruye automáticamente todos los core_crystal (Generadores de Escudo) restantes con explosión de partículas
+  for (const other of world.enemies) {
+    if (other.brawlRole === 'core_crystal' && other.state !== 'knocked' && (other as any).alive !== false) {
+      (other as any).alive = false;
+      other.state = 'knocked';
+      other.vy = -6.5;
+      other.vx = 0;
+      other.hp = 0;
+      spawnSparks(world, other.x + other.width / 2, other.y + other.height / 2, '#38bdf8', 16);
+      spawnBrickDebris(world, other.x + other.width / 2, other.y + other.height / 2);
+    }
+  }
+  world.brawlTargetsDefeated = world.brawlTargetsTotal ?? 3;
+
   if (!world.pickups) world.pickups = [];
   const portal = world.pickups.find((pk) => pk.kind === 'portal');
   if (portal) {
@@ -1689,6 +1705,21 @@ export function stepWorld(
     text: objectiveCb.text,
   }, input.up || input.down);
   if (world.status !== 'playing') return events;
+
+  // Portal en Odisea: al tocarlo avanza limpiamente sin requerir input adicional
+  if (world.partition === 'odyssey' && world.status === 'playing' && world.pickups) {
+    for (const pk of world.pickups) {
+      if (!pk.collected && pk.kind === 'portal' && overlaps(p, pk)) {
+        pk.collected = true;
+        events.push({ type: 'sfx', id: 'portal' });
+        events.push({ type: 'haptic', kind: 'success' });
+        spawnSparks(world, pk.x + pk.width / 2, pk.y + pk.height / 2, '#c084fc', 20);
+        spawnText(world, pk.x - 30, pk.y - 20, '¡PORTAL COMPLETADO!', '#c084fc');
+        advanceOrWinStage(world, events);
+        return events;
+      }
+    }
+  }
 
   // Update Moving Platforms first so standing entities inherit delta
   let ridingPlatform: MovingPlatform | null = null;
@@ -4031,7 +4062,12 @@ export function stepWorld(
 
   // Classic Flagpole Goal check
   if (world.flagpole && overlaps(p, world.flagpole)) {
-    if (!arenaWaveActive && !isGoalLocked(world)) {
+    const isGoalOpen =
+      !arenaWaveActive &&
+      (!isGoalLocked(world) ||
+        world.goalSealBroken ||
+        (world.partition === 'odyssey' && world.odysseyMode === 'titan_crater'));
+    if (isGoalOpen) {
       startFlagpoleSequence(world, events);
     }
   }

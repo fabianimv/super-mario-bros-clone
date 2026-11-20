@@ -183,6 +183,7 @@ export function objectiveForStage(
   isCastle = false,
   isBoss = false
 ): StageObjective {
+  if (partition === 'city_chaos') return 'reach';
   if (partition === 'odyssey') return 'core_breaker';
   if (isCastle || isBoss || stageIndex % 4 === 3) return 'reach';
   if (partition === 'flip') return 'core_breaker';
@@ -198,6 +199,7 @@ export function objectiveForStage(
 }
 
 export function getStageObjective(levelIndex: number, partition: GamePartition): StageObjective {
+  if (partition === 'city_chaos') return 'reach';
   if (partition === 'odyssey') return 'core_breaker';
   if (levelIndex % 4 === 3) return 'reach';
   if (partition === 'flip') return 'core_breaker';
@@ -651,6 +653,16 @@ export function countBrawlTargets(world: WorldState): { total: number; alive: nu
 /** ¿La meta está cerrada por objetivos de combate pendientes o apuesta? */
 export function isGoalLocked(world: WorldState): boolean {
   if (world.goalSealBroken || (world.pSwitchTimer ?? 0) > 0) return false;
+  if (world.odysseyMode === 'titan_crater') {
+    const titan = (world.enemies ?? []).find((e) => e.brawlRole === 'titan_boss');
+    const titanAlive = titan
+      ? (titan as any).alive !== false &&
+        (titan.hp ?? 1) > 0 &&
+        titan.state !== 'squashed' &&
+        titan.state !== 'knocked'
+      : false;
+    if (!titanAlive) return false;
+  }
   switch (world.objective) {
     case 'brawl_captain':
     case 'bounty_hunt':
@@ -996,6 +1008,17 @@ export function updateObjectives(world: WorldState, events: GameEvent[], cb: Obj
  */
 export function enforceGoalLock(world: WorldState, events: GameEvent[], cb: ObjectiveCallbacks): boolean {
   if (checkGoalSkillBypass(world, events, cb)) return false;
+  if (world.goalSealBroken) return false;
+  if (world.odysseyMode === 'titan_crater') {
+    const titan = (world.enemies ?? []).find((e) => e.brawlRole === 'titan_boss');
+    const titanAlive = titan
+      ? (titan as any).alive !== false &&
+        (titan.hp ?? 1) > 0 &&
+        titan.state !== 'squashed' &&
+        titan.state !== 'knocked'
+      : false;
+    if (!titanAlive) return false;
+  }
   if (!isGoalLocked(world)) return false;
   const p = world.player;
   const fp = world.flagpole ?? world.goalTape;

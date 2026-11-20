@@ -66,7 +66,7 @@ export const WorldSelectModal: React.FC<Props> = ({
   onClose,
 }) => {
   const insets = useSafeAreaInsets();
-  const [freePlay, setFreePlay] = useState(false);
+  const [freePlay, setFreePlay] = useState(true);
   const fontFamily = pixelFontLoaded ? 'PressStart2P_400Regular' : undefined;
 
   if (!visible) return null;
@@ -81,11 +81,17 @@ export const WorldSelectModal: React.FC<Props> = ({
   const isTower = partition === 'tower';
   const isFlip = partition === 'flip';
   const isStarRoad = partition === 'star_road';
+  const isOdyssey = partition === 'odyssey';
+  const isCityChaos = partition === 'city_chaos';
 
   const basePartitions: GamePartition[] = ['classic', 'smw', 'expedition', 'dimension'];
   const newPartitions = PARTITION_ORDER.filter((part) => !basePartitions.includes(part));
 
-  const worldCount = isSmw
+  const worldCount = isCityChaos
+    ? 1
+    : isOdyssey
+    ? 1
+    : isSmw
     ? SMW_WORLDS
     : isExp
     ? EXP_WORLDS
@@ -106,7 +112,11 @@ export const WorldSelectModal: React.FC<Props> = ({
     : isStarRoad
     ? STAR_ROAD_WORLDS
     : TOTAL_WORLDS;
-  const worldNames = isSmw
+  const worldNames = isCityChaos
+    ? ['C • CIUDAD CAOS • 6 DISTRITOS GTA 2D']
+    : isOdyssey
+    ? ['O • ODISEA ABIERTA • 3 MUNDOS GIGANTES']
+    : isSmw
     ? SMW_WORLD_NAMES
     : isExp
     ? EXP_WORLD_NAMES
@@ -253,13 +263,14 @@ export const WorldSelectModal: React.FC<Props> = ({
         >
           {Array.from({ length: worldCount }, (_, wIdx) => {
             const worldStart = wIdx * STAGES_PER_WORLD;
-            const stageCount = STAGES_PER_WORLD;
+            const stageCount = isCityChaos ? 1 : isOdyssey ? 3 : STAGES_PER_WORLD;
             const primaryBiome = BIOMES[getStageBiome(worldStart, partition)];
             return (
               <View
                 key={`${partition}_${wIdx}`}
                 style={[
                   styles.worldCard,
+                  (isCityChaos || isOdyssey) && { width: '100%' },
                   isFrontier && styles.worldCardFrontier,
                   isTower && styles.worldCardTower,
                   isFlip && styles.worldCardFlip,
@@ -283,7 +294,7 @@ export const WorldSelectModal: React.FC<Props> = ({
                     const levelIdx = worldStart + sIdx;
                     const unlocked = freePlay || levelIdx <= unlockedIdx;
                     const cleared = clearedList.includes(levelIdx);
-                    const isBoss = sIdx === 3;
+                    const isBoss = isOdyssey ? sIdx === 2 : sIdx === 3;
 
                     return (
                       <Pressable

@@ -10,7 +10,8 @@ export type GamePartition =
   | 'tower'
   | 'flip'
   | 'star_road'
-  | 'odyssey';
+  | 'odyssey'
+  | 'city_chaos';
 
 export type BiomeId =
   | 'meadow'
@@ -838,6 +839,12 @@ export interface SaveProgress {
   odysseyClearedLevels?: number[];
   odysseyBestStageScores?: Record<number, number>;
   odysseyUnlocked?: number;
+  // Ciudad Caos (Mundo Abierto GTA Top-Down)
+  cityChaosHighScore?: number;
+  cityChaosUnlockedLevel?: number;
+  cityChaosClearedLevels?: number[];
+  cityChaosBestStageScores?: Record<number, number>;
+  allUnlocked?: boolean;
   // Desbloqueo permanente de mundo secreto
   secretUnlocked?: boolean;
   lastPartition: GamePartition;

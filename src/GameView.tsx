@@ -71,6 +71,10 @@ import {
 import { PauseModal, StageStatusOverlay } from './ui/PauseModal';
 import { TitleScreen } from './ui/TitleScreen';
 import { WorldSelectModal } from './ui/WorldSelectModal';
+import { buildCityWorld } from './city/cityBuilder';
+import { stepCityWorld } from './city/cityPhysics';
+import { drawCityWorld } from './city/cityRenderer';
+import type { CityWorld } from './city/cityTypes';
 
 const FIXED_DT = 1 / 60;
 
@@ -179,6 +183,9 @@ export const GameView: React.FC = () => {
   });
 
   const worldRef = useRef<WorldState>(createAttractWorld('smw', DEFAULT_PROGRESS));
+  const cityWorldRef = useRef<CityWorld | null>(null);
+  const cityDrivingRef = useRef(false);
+  const [cityDriving, setCityDriving] = useState(false);
   const renderer = useMemo(() => new SkiaWorldRenderer(), []);
   const framePicture = useSharedValue(createPicture(() => {}));
 
@@ -320,6 +327,16 @@ export const GameView: React.FC = () => {
             if (world.status !== 'playing' || world.player.x > (world.totalCols - 22) * TILE) {
               worldRef.current = createAttractWorld(partitionRef.current, progressRef.current);
             }
+          } else if (partitionRef.current === 'city_chaos' && cityWorldRef.current) {
+            const events = stepCityWorld(
+              cityWorldRef.current,
+              inputRef.current,
+              viewportWorldW,
+              LOGICAL_HEIGHT
+            );
+            if (events.length > 0) {
+              handleEvents(events, false);
+            }
           } else {
             const evs = stepWorld(world, inputRef.current, viewportWorldW);
             if (evs.length > 0) {
@@ -330,115 +347,133 @@ export const GameView: React.FC = () => {
       }
 
       // Record GPU SkPicture with zero React component re-renders!
-      const activeWorld = worldRef.current;
-      const gl3d = gl3dRef.current;
-      let drewIn3D = false;
-      const is3D = activeWorld.partition === 'dimension' || activeWorld.cameraMode === 'corridor3d';
-      if (is3D && gl3d && !gl3dFailedRef.current) {
-        try {
-          gl3d.render(activeWorld, width, height);
-          framePicture.value = renderer.renderOverlayTexts(
+      if (!inTitleRef.current && partitionRef.current === 'city_chaos' && cityWorldRef.current) {
+        const cw = cityWorldRef.current;
+        framePicture.value = createPicture(
+          (canvas) => {
+            canvas.save();
+            canvas.scale(scale, scale);
+            drawCityWorld(canvas, cw, viewportWorldW, LOGICAL_HEIGHT, skiaPixelFont);
+            canvas.restore();
+          },
+          { width, height }
+        );
+        const drivingNow = cw.player.vehicleId != null;
+        if (drivingNow !== cityDrivingRef.current) {
+          cityDrivingRef.current = drivingNow;
+          setCityDriving(drivingNow);
+        }
+      } else {
+        const activeWorld = worldRef.current;
+        const gl3d = gl3dRef.current;
+        let drewIn3D = false;
+        const is3D = activeWorld.partition === 'dimension' || activeWorld.cameraMode === 'corridor3d';
+        if (is3D && gl3d && !gl3dFailedRef.current) {
+          try {
+            gl3d.render(activeWorld, width, height);
+            framePicture.value = renderer.renderOverlayTexts(
+              activeWorld,
+              width,
+              height,
+              skiaPixelFont,
+              (x, y) => gl3d.projectToScreen(x, y, width, height)
+            );
+            drewIn3D = true;
+          } catch {
+            // Si el 3D falla en este equipo, el modo sigue jugándose en 2D
+            gl3dFailedRef.current = true;
+            gl3dRef.current = null;
+            setGl3dFailed(true);
+          }
+        }
+        if (!drewIn3D) {
+          framePicture.value = renderer.renderWorldPicture(
             activeWorld,
             width,
             height,
             skiaPixelFont,
-            (x, y) => gl3d.projectToScreen(x, y, width, height)
+            settingsRef.current.crtScanlines
           );
-          drewIn3D = true;
-        } catch {
-          // Si el 3D falla en este equipo, el modo sigue jugándose en 2D
-          gl3dFailedRef.current = true;
-          gl3dRef.current = null;
-          setGl3dFailed(true);
-        }
-      }
-      if (!drewIn3D) {
-        framePicture.value = renderer.renderWorldPicture(
-          activeWorld,
-          width,
-          height,
-          skiaPixelFont,
-          settingsRef.current.crtScanlines
-        );
-      }
-
-      // Only update lightweight HUD React state when displayed values change
-      if (!inTitleRef.current) {
-        if (activeWorld.partition !== partitionRef.current) {
-          partitionRef.current = activeWorld.partition;
-          setPartition(activeWorld.partition);
-          const updatedProg: SaveProgress = {
-            ...progressRef.current,
-            lastPartition: activeWorld.partition,
-          };
-          progressRef.current = updatedProg;
-          setProgress(updatedProg);
-          void saveProgress(updatedProg);
         }
 
-        const titanBoss = activeWorld.enemies.find(
-          (en) => en.brawlRole === 'titan_boss' && en.hp > 0
-        );
-        const bossHp =
-          activeWorld.boss && !activeWorld.boss.defeated
-            ? activeWorld.boss.hp
+        // Only update lightweight HUD React state when displayed values change
+        if (!inTitleRef.current) {
+          if (activeWorld.partition !== partitionRef.current) {
+            partitionRef.current = activeWorld.partition;
+            setPartition(activeWorld.partition);
+            const updatedProg: SaveProgress = {
+              ...progressRef.current,
+              lastPartition: activeWorld.partition,
+            };
+            progressRef.current = updatedProg;
+            setProgress(updatedProg);
+            void saveProgress(updatedProg);
+          }
+
+          const titanBoss = activeWorld.enemies.find(
+            (en) => en.brawlRole === 'titan_boss' && en.hp > 0
+          );
+          const bossHp =
+            activeWorld.boss && !activeWorld.boss.defeated
+              ? activeWorld.boss.hp
+              : titanBoss
+              ? titanBoss.hp
+              : null;
+          const bossMaxHp = activeWorld.boss
+            ? activeWorld.boss.maxHp
             : titanBoss
-            ? titanBoss.hp
+            ? titanBoss.maxHp ?? 18
             : null;
-        const bossMaxHp = activeWorld.boss
-          ? activeWorld.boss.maxHp
-          : titanBoss
-          ? titanBoss.maxHp ?? 18
-          : null;
-        const starActive = activeWorld.player.starTimer > 0;
-        const pBucket = Math.floor(activeWorld.player.pMeter / 10);
-        const yoshiFireReady = activeWorld.player.yoshiMouthItem === 'fire';
-        const arenaWaveKey = activeWorld.arenaWave
-          ? `${activeWorld.arenaWave.current}/${activeWorld.arenaWave.total}`
-          : '';
-        const furyBucket = Math.floor((activeWorld.player.furyMeter ?? 0) / 5);
-        const furyTimerActive = (activeWorld.player.furyTimer ?? 0) > 0 ? 1 : 0;
-        const jetpackFuelBucket = Math.floor((activeWorld.player.jetpackFuel ?? 0) / 5);
-        const chronoActive = (activeWorld.player.chronoTimer ?? 0) > 0 ? 1 : 0;
-        const mechaActive = activeWorld.player.mechaSuit ? 1 : 0;
-        const odysseyMode = activeWorld.odysseyMode ?? '';
-        const hudKey = `${activeWorld.partition}|${activeWorld.status}|${activeWorld.score}|${activeWorld.coins}|${activeWorld.dragonCoinsCollected}|${activeWorld.worldLabel}|${activeWorld.timeLeft}|${activeWorld.lives}|${activeWorld.player.powerState}|${starActive}|${pBucket}|${activeWorld.player.mountedYoshi}|${yoshiFireReady}|${bossHp}|${activeWorld.gemsCollected ?? 0}|${activeWorld.objective ?? ''}|${activeWorld.hasKey ? 1 : 0}|${activeWorld.cameraMode ?? 'side'}|${activeWorld.gravityDir ?? 1}|${activeWorld.onOffState ?? ''}|${activeWorld.subArea ?? ''}|${arenaWaveKey}|${furyBucket}|${furyTimerActive}|${odysseyMode}|${jetpackFuelBucket}|${chronoActive}|${mechaActive}`;
-        if (hudKey !== lastHudKey) {
-          lastHudKey = hudKey;
-          setUiStatus(activeWorld.status);
-          setHud({
-            partition: activeWorld.partition,
-            score: activeWorld.score,
-            coins: activeWorld.coins,
-            worldLabel: activeWorld.worldLabel,
-            stageTitle: activeWorld.stageTitle,
-            timeLeft: activeWorld.timeLeft,
-            lives: activeWorld.lives,
-            powerState: activeWorld.player.powerState,
-            starActive,
-            pMeter: activeWorld.player.pMeter,
-            mountedYoshi: activeWorld.player.mountedYoshi,
-            yoshiFireReady,
-            dragonCoins: activeWorld.dragonCoinsCollected,
-            bossHp,
-            bossMaxHp,
-            objective: objectiveHudLabel(activeWorld),
-            timeAttack: activeWorld.objective === 'time_attack',
-            keyHeld: Boolean(activeWorld.hasKey),
-            cameraMode: activeWorld.cameraMode,
-            gravityDir: activeWorld.gravityDir,
-            onOffState: activeWorld.onOffState,
-            subArea: activeWorld.subArea,
-            arenaWave: activeWorld.arenaWave
-              ? { current: activeWorld.arenaWave.current, total: activeWorld.arenaWave.total }
-              : null,
-            furyMeter: activeWorld.player.furyMeter ?? 0,
-            furyTimer: activeWorld.player.furyTimer ?? 0,
-            odysseyMode: activeWorld.odysseyMode,
-            jetpackFuel: activeWorld.player.jetpackFuel,
-            chronoTimer: activeWorld.player.chronoTimer,
-            mechaSuit: activeWorld.player.mechaSuit,
-          });
+          const starActive = activeWorld.player.starTimer > 0;
+          const pBucket = Math.floor(activeWorld.player.pMeter / 10);
+          const yoshiFireReady = activeWorld.player.yoshiMouthItem === 'fire';
+          const arenaWaveKey = activeWorld.arenaWave
+            ? `${activeWorld.arenaWave.current}/${activeWorld.arenaWave.total}`
+            : '';
+          const furyBucket = Math.floor((activeWorld.player.furyMeter ?? 0) / 5);
+          const furyTimerActive = (activeWorld.player.furyTimer ?? 0) > 0 ? 1 : 0;
+          const jetpackFuelBucket = Math.floor((activeWorld.player.jetpackFuel ?? 0) / 5);
+          const chronoActive = (activeWorld.player.chronoTimer ?? 0) > 0 ? 1 : 0;
+          const mechaActive = activeWorld.player.mechaSuit ? 1 : 0;
+          const odysseyMode = activeWorld.odysseyMode ?? '';
+          const hudKey = `${activeWorld.partition}|${activeWorld.status}|${activeWorld.score}|${activeWorld.coins}|${activeWorld.dragonCoinsCollected}|${activeWorld.worldLabel}|${activeWorld.timeLeft}|${activeWorld.lives}|${activeWorld.player.powerState}|${starActive}|${pBucket}|${activeWorld.player.mountedYoshi}|${yoshiFireReady}|${bossHp}|${activeWorld.gemsCollected ?? 0}|${activeWorld.objective ?? ''}|${activeWorld.hasKey ? 1 : 0}|${activeWorld.cameraMode ?? 'side'}|${activeWorld.gravityDir ?? 1}|${activeWorld.onOffState ?? ''}|${activeWorld.subArea ?? ''}|${arenaWaveKey}|${furyBucket}|${furyTimerActive}|${odysseyMode}|${jetpackFuelBucket}|${chronoActive}|${mechaActive}`;
+          if (hudKey !== lastHudKey) {
+            lastHudKey = hudKey;
+            setUiStatus(activeWorld.status);
+            setHud({
+              partition: activeWorld.partition,
+              score: activeWorld.score,
+              coins: activeWorld.coins,
+              worldLabel: activeWorld.worldLabel,
+              stageTitle: activeWorld.stageTitle,
+              timeLeft: activeWorld.timeLeft,
+              lives: activeWorld.lives,
+              powerState: activeWorld.player.powerState,
+              starActive,
+              pMeter: activeWorld.player.pMeter,
+              mountedYoshi: activeWorld.player.mountedYoshi,
+              yoshiFireReady,
+              dragonCoins: activeWorld.dragonCoinsCollected,
+              bossHp,
+              bossMaxHp,
+              objective: objectiveHudLabel(activeWorld),
+              timeAttack: activeWorld.objective === 'time_attack',
+              keyHeld: Boolean(activeWorld.hasKey),
+              cameraMode: activeWorld.cameraMode,
+              gravityDir: activeWorld.gravityDir,
+              onOffState: activeWorld.onOffState,
+              subArea: activeWorld.subArea,
+              arenaWave: activeWorld.arenaWave
+                ? { current: activeWorld.arenaWave.current, total: activeWorld.arenaWave.total }
+                : null,
+              furyMeter: activeWorld.player.furyMeter ?? 0,
+              furyTimer: activeWorld.player.furyTimer ?? 0,
+              odysseyMode: activeWorld.odysseyMode,
+              jetpackFuel: activeWorld.player.jetpackFuel,
+              chronoTimer: activeWorld.player.chronoTimer,
+              mechaSuit: activeWorld.player.mechaSuit,
+            });
+          }
         }
       }
 
@@ -497,17 +532,29 @@ export const GameView: React.FC = () => {
       },
       activePart
     );
-    fresh.status = 'stage_intro';
-    fresh.statusTimer = 78;
+    const isCity = activePart === 'city_chaos';
+    if (isCity) {
+      cityWorldRef.current = buildCityWorld();
+      cityDrivingRef.current = false;
+      setCityDriving(false);
+    }
+    fresh.status = isCity ? 'playing' : 'stage_intro';
+    fresh.statusTimer = isCity ? 0 : 78;
     worldRef.current = fresh;
     inTitleRef.current = false;
     pausedRef.current = false;
     setInTitle(false);
     setWorldSelectOpen(false);
     setModalMode('none');
-    setUiStatus('stage_intro');
+    setUiStatus(fresh.status);
+    setHud((prev) => ({
+      ...prev,
+      partition: activePart,
+      worldLabel: fresh.worldLabel,
+      stageTitle: fresh.stageTitle,
+    }));
     soundManager.setPaused(false);
-    soundManager.playBgm(null);
+    soundManager.playBgm(isCity ? 'dim_theme' : null);
   }, []);
 
   const handleUpdateSettings = useCallback((patch: Partial<GameSettings>) => {
@@ -537,7 +584,12 @@ export const GameView: React.FC = () => {
 
   const handleRestartCurrentStage = useCallback(() => {
     const idx = worldRef.current.levelIndex;
-    const activePart = worldRef.current.partition;
+    const activePart = partitionRef.current;
+    if (activePart === 'city_chaos') {
+      cityWorldRef.current = buildCityWorld();
+      cityDrivingRef.current = false;
+      setCityDriving(false);
+    }
     const fresh = buildWorldState(
       idx,
       {
@@ -639,7 +691,7 @@ export const GameView: React.FC = () => {
       </Canvas>
 
       {/* Active Gameplay HUD & Corner-Tucked Multi-Touch Controller */}
-      {!inTitle && (
+      {!inTitle && partition !== 'city_chaos' && (
         <HudOverlay
           hud={hud}
           pixelFontLoaded={fontsLoaded}
@@ -647,14 +699,25 @@ export const GameView: React.FC = () => {
         />
       )}
 
+      {!inTitle && partition === 'city_chaos' && (
+        <Pressable
+          onPress={handleOpenPause}
+          hitSlop={12}
+          style={({ pressed }) => [styles.cityPauseBtn, pressed && styles.cityPauseBtnPressed]}
+        >
+          <Text style={styles.cityPauseText}>⏸</Text>
+        </Pressable>
+      )}
+
       <ArcadeTouchControls
         inputRef={inputRef}
-        partition={hud.partition}
+        partition={partition}
         powerState={hud.powerState}
         mountedYoshi={hud.mountedYoshi}
         controlScale={settings.controlScale}
         visible={showControls}
         odysseyMode={hud.odysseyMode}
+        cityMode={partition === 'city_chaos' ? (cityDriving ? 'driving' : 'foot') : null}
       />
 
       {/* Dual-Cartridge Title Screen over Live Attract-Mode Demo */}
@@ -666,6 +729,7 @@ export const GameView: React.FC = () => {
           onSelectPartition={handleSelectPartition}
           onStartAdventure={() => launchStage(0, partition)}
           onContinue={() => launchStage(continueLevelIdx, partition)}
+          onQuickLaunchCityChaos={() => launchStage(0, 'city_chaos')}
           onOpenWorldSelect={() => {
             haptics.trigger('light');
             setWorldSelectOpen(true);
@@ -754,6 +818,29 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#060913',
+  },
+  cityPauseBtn: {
+    position: 'absolute',
+    top: 8,
+    left: 102,
+    width: 34,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    borderWidth: 2,
+    borderColor: '#94a3b8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 35,
+  },
+  cityPauseBtnPressed: {
+    transform: [{ scale: 0.92 }],
+    backgroundColor: '#334155',
+  },
+  cityPauseText: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '900',
   },
   portraitPrompt: {
     ...StyleSheet.absoluteFill,

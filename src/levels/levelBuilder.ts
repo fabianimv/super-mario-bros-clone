@@ -207,6 +207,22 @@ export function buildWorldState(
   if (partition === 'odyssey') {
     return buildOdysseyStage(levelIndex, carryState);
   }
+  if (partition === 'city_chaos') {
+    const base = buildOdysseyStage(0, carryState);
+    return {
+      ...base,
+      partition: 'city_chaos',
+      totalStagesInPartition: 1,
+      levelIndex: 0,
+      worldLabel: 'C-1',
+      stageTitle: 'CIUDAD CAOS',
+      objective: 'reach',
+      brawlTargetsTotal: 0,
+      brawlTargetsDefeated: 0,
+      gemsNeeded: 0,
+      gemsCollected: 0,
+    };
+  }
 
   if (partition === 'smw') {
     return applyStageObjective(

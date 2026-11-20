@@ -19,6 +19,7 @@ interface Props {
   controlScale: number;
   visible: boolean;
   odysseyMode?: 'citadel_grapple' | 'chrono_canyon' | 'titan_crater';
+  cityMode?: 'foot' | 'driving' | null;
 }
 
 interface VisualPressed {
@@ -51,6 +52,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
   controlScale,
   visible,
   odysseyMode,
+  cityMode,
 }) => {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -154,15 +156,15 @@ export const ArcadeTouchControls: React.FC<Props> = ({
       if (e.code === 'Space' || e.code === 'KeyK') kb.jump = true;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyZ' || e.code === 'KeyJ') {
         kb.run = true;
-        kb.fire = true;
+        if (!cityMode) kb.fire = true;
       }
       if (e.code === 'KeyX') {
         kb.fire = true;
-        kb.run = true;
+        if (!cityMode) kb.run = true;
       }
       if (e.code === 'KeyC' || e.code === 'KeyE') {
         kb.spin = true;
-        kb.run = true;
+        if (!cityMode) kb.run = true;
       }
       syncMergedInput(prevVisualRef.current);
     };
@@ -176,15 +178,15 @@ export const ArcadeTouchControls: React.FC<Props> = ({
       if (e.code === 'Space' || e.code === 'KeyK') kb.jump = false;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyZ' || e.code === 'KeyJ') {
         kb.run = false;
-        kb.fire = false;
+        if (!cityMode) kb.fire = false;
       }
       if (e.code === 'KeyX') {
         kb.fire = false;
-        kb.run = false;
+        if (!cityMode) kb.run = false;
       }
       if (e.code === 'KeyC' || e.code === 'KeyE') {
         kb.spin = false;
-        kb.run = false;
+        if (!cityMode) kb.run = false;
       }
       syncMergedInput(prevVisualRef.current);
     };
@@ -195,7 +197,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [syncMergedInput]);
+  }, [cityMode, syncMergedInput]);
 
   useEffect(() => {
     if (!visible) {
@@ -236,7 +238,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         const tx = touches[i].pageX;
         const ty = touches[i].pageY;
 
-        // Left side -> Slideable 4-Way Arcade D-Pad
+        // Left side -> Slideable 4-Way / 8-Way Arcade D-Pad
         if (tx < width * 0.45) {
           const dx = tx - dpadCenterX;
           const dy = ty - dpadCenterY;
@@ -245,9 +247,11 @@ export const ArcadeTouchControls: React.FC<Props> = ({
             if (dx < -deadzone) next.left = true;
             else if (dx > deadzone) next.right = true;
 
-            if (dy > deadzone * 1.35 && Math.abs(dy) > Math.abs(dx) * 0.68) {
+            const vertRatio = cityMode ? 0.42 : 0.68;
+            const vertDeadzone = cityMode ? deadzone : deadzone * 1.35;
+            if (dy > vertDeadzone && Math.abs(dy) > Math.abs(dx) * vertRatio) {
               next.down = true;
-            } else if (dy < -deadzone * 1.35 && Math.abs(dy) > Math.abs(dx) * 0.68) {
+            } else if (dy < -vertDeadzone && Math.abs(dy) > Math.abs(dx) * vertRatio) {
               next.up = true;
             }
           }
@@ -265,19 +269,23 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         }
         if (distRun <= actionHalo) {
           next.run = true;
-          if (!mountedYoshi && powerState === 2) {
+          if (!cityMode && !mountedYoshi && powerState === 2) {
             next.fire = true;
           }
         }
         if (distFire <= auxHalo) {
           next.fire = true;
-          next.run = true;
+          if (!cityMode) {
+            next.run = true;
+          }
         }
         if (distSpin <= auxHalo) {
           next.spin = true;
-          next.run = true;
-          if (partition !== 'smw' && partition !== 'flip') {
-            next.fire = true;
+          if (!cityMode) {
+            next.run = true;
+            if (partition !== 'smw' && partition !== 'flip') {
+              next.fire = true;
+            }
           }
         }
       }
@@ -287,6 +295,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
     [
       auxRadius,
       btnRadius,
+      cityMode,
       controlScale,
       dpadCenterX,
       dpadCenterY,
@@ -313,29 +322,45 @@ export const ArcadeTouchControls: React.FC<Props> = ({
   const armLen = Math.round((dpadSize - armThick) / 2 - 5);
 
   const aLabel =
-    odysseyMode === 'chrono_canyon' || odysseyMode === 'titan_crater'
+    cityMode === 'driving'
+      ? 'NITRO'
+      : cityMode === 'foot'
+      ? 'DASH'
+      : odysseyMode === 'chrono_canyon' || odysseyMode === 'titan_crater'
       ? 'JET'
       : powerState === 3
       ? 'VOLAR'
       : 'SALTAR';
 
-  const xLabel = mountedYoshi
-    ? 'LENGUA'
-    : odysseyMode === 'titan_crater'
-    ? 'PLASMA'
-    : 'COMBO';
+  const bLabel = cityMode === 'driving' ? 'DRIFT' : 'CORRER';
 
-  const yLabel = mountedYoshi
-    ? 'LENGUA'
-    : odysseyMode === 'citadel_grapple'
-    ? 'GANCHO'
-    : odysseyMode === 'chrono_canyon'
-    ? 'CRONO'
-    : odysseyMode === 'titan_crater'
-    ? 'ESCUDO'
-    : partition === 'flip'
-    ? 'GRAV'
-    : 'PARRY';
+  const xLabel =
+    cityMode === 'driving'
+      ? 'CAÑÓN'
+      : cityMode === 'foot'
+      ? 'ARMA'
+      : mountedYoshi
+      ? 'LENGUA'
+      : odysseyMode === 'titan_crater'
+      ? 'PLASMA'
+      : 'COMBO';
+
+  const yLabel =
+    cityMode === 'driving'
+      ? 'BAJAR'
+      : cityMode === 'foot'
+      ? 'AUTO'
+      : mountedYoshi
+      ? 'LENGUA'
+      : odysseyMode === 'citadel_grapple'
+      ? 'GANCHO'
+      : odysseyMode === 'chrono_canyon'
+      ? 'CRONO'
+      : odysseyMode === 'titan_crater'
+      ? 'ESCUDO'
+      : partition === 'flip'
+      ? 'GRAV'
+      : 'PARRY';
 
   return (
     <View
@@ -429,12 +454,16 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         ]}
       />
 
-      {/* Y Button: Parry / Gravity Flip / Yoshi Tongue / Odyssey Mechanix */}
+      {/* Y Button: Parry / Gravity Flip / Yoshi Tongue / Odyssey Mechanix / City Mount */}
       <View
         pointerEvents="none"
         style={[
           styles.spinBtn,
-          mountedYoshi
+          cityMode === 'driving'
+            ? styles.spinBtnTitan
+            : cityMode === 'foot'
+            ? styles.spinBtnGrapple
+            : mountedYoshi
             ? styles.spinBtnYoshi
             : partition === 'flip'
             ? styles.spinBtnFlip
@@ -459,12 +488,14 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         <Text style={styles.btnSubLabel}>{yLabel}</Text>
       </View>
 
-      {/* X Button: Melee Combo / Fireball / Cape Whip / Yoshi Tongue / Mecha Plasma */}
+      {/* X Button: Melee Combo / Fireball / Cape Whip / Yoshi Tongue / Mecha Plasma / City Cannon */}
       <View
         pointerEvents="none"
         style={[
           styles.fireBtn,
-          odysseyMode === 'titan_crater' ? styles.fireBtnPlasma : styles.fireBtnArmed,
+          odysseyMode === 'titan_crater' || cityMode != null
+            ? styles.fireBtnPlasma
+            : styles.fireBtnArmed,
           pressed.fire && styles.btnDepressed,
           {
             width: auxRadius * 2,
@@ -479,7 +510,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         <Text style={styles.btnSubLabel}>{xLabel}</Text>
       </View>
 
-      {/* B Button: Sprint + P-Meter Charge */}
+      {/* B Button: Sprint + P-Meter Charge / City Drift */}
       <View
         pointerEvents="none"
         style={[
@@ -495,7 +526,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         ]}
       >
         <Text style={styles.btnLetterDark}>B</Text>
-        <Text style={styles.btnSubDark}>CORRER</Text>
+        <Text style={styles.btnSubDark}>{bLabel}</Text>
       </View>
 
       {/* A Button: Jump / Cape Parachute / Jetpack */}
