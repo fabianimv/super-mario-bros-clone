@@ -11,7 +11,8 @@ export type GamePartition =
   | 'flip'
   | 'star_road'
   | 'odyssey'
-  | 'city_chaos';
+  | 'city_chaos'
+  | 'realms';
 
 export type BiomeId =
   | 'meadow'
@@ -844,6 +845,11 @@ export interface SaveProgress {
   cityChaosUnlockedLevel?: number;
   cityChaosClearedLevels?: number[];
   cityChaosBestStageScores?: Record<number, number>;
+  // Reinos Abiertos (3 mundos abiertos con motor propio)
+  realmsHighScore?: number;
+  realmsUnlockedLevel?: number;
+  realmsClearedLevels?: number[];
+  realmsBestStageScores?: Record<number, number>;
   allUnlocked?: boolean;
   // Desbloqueo permanente de mundo secreto
   secretUnlocked?: boolean;

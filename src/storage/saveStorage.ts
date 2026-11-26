@@ -60,9 +60,13 @@ export const DEFAULT_PROGRESS: SaveProgress = {
   cityChaosUnlockedLevel: 0,
   cityChaosClearedLevels: [],
   cityChaosBestStageScores: {},
+  realmsHighScore: 0,
+  realmsUnlockedLevel: 2,
+  realmsClearedLevels: [],
+  realmsBestStageScores: {},
   secretUnlocked: true,
   allUnlocked: true,
-  lastPartition: 'smw',
+  lastPartition: 'realms',
 };
 
 export const defaultProgress = DEFAULT_PROGRESS;
@@ -132,6 +136,10 @@ export function sanitizeProgress(parsed: Partial<SaveProgress> = {}): SaveProgre
     cityChaosUnlockedLevel: typeof parsed.cityChaosUnlockedLevel === 'number' ? parsed.cityChaosUnlockedLevel : 0,
     cityChaosClearedLevels: Array.isArray(parsed.cityChaosClearedLevels) ? parsed.cityChaosClearedLevels : [],
     cityChaosBestStageScores: parsed.cityChaosBestStageScores ?? {},
+    realmsHighScore: typeof parsed.realmsHighScore === 'number' ? parsed.realmsHighScore : 0,
+    realmsUnlockedLevel: Math.max(2, typeof parsed.realmsUnlockedLevel === 'number' ? parsed.realmsUnlockedLevel : 2),
+    realmsClearedLevels: Array.isArray(parsed.realmsClearedLevels) ? parsed.realmsClearedLevels : [],
+    realmsBestStageScores: parsed.realmsBestStageScores ?? {},
     secretUnlocked: true,
     allUnlocked: true,
     lastPartition:
@@ -147,9 +155,10 @@ export function sanitizeProgress(parsed: Partial<SaveProgress> = {}): SaveProgre
       parsed.lastPartition === 'flip' ||
       parsed.lastPartition === 'star_road' ||
       parsed.lastPartition === 'odyssey' ||
-      parsed.lastPartition === 'city_chaos'
+      parsed.lastPartition === 'city_chaos' ||
+      parsed.lastPartition === 'realms'
         ? parsed.lastPartition
-        : 'smw',
+        : 'realms',
   };
 }
 

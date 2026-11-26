@@ -168,6 +168,7 @@ for (const [part, total] of ALL_MODES) {
     star_road: 'reach',
     odyssey: 'core_breaker',
     city_chaos: 'reach',
+    realms: 'reach',
   };
   const firstObjective = objectiveForStage(part, 0);
   assert(

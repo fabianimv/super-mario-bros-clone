@@ -183,7 +183,7 @@ export function objectiveForStage(
   isCastle = false,
   isBoss = false
 ): StageObjective {
-  if (partition === 'city_chaos') return 'reach';
+  if (partition === 'city_chaos' || partition === 'realms') return 'reach';
   if (partition === 'odyssey') return 'core_breaker';
   if (isCastle || isBoss || stageIndex % 4 === 3) return 'reach';
   if (partition === 'flip') return 'core_breaker';
@@ -199,7 +199,7 @@ export function objectiveForStage(
 }
 
 export function getStageObjective(levelIndex: number, partition: GamePartition): StageObjective {
-  if (partition === 'city_chaos') return 'reach';
+  if (partition === 'city_chaos' || partition === 'realms') return 'reach';
   if (partition === 'odyssey') return 'core_breaker';
   if (levelIndex % 4 === 3) return 'reach';
   if (partition === 'flip') return 'core_breaker';

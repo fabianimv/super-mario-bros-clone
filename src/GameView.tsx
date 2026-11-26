@@ -75,8 +75,35 @@ import { buildCityWorld } from './city/cityBuilder';
 import { stepCityWorld } from './city/cityPhysics';
 import { drawCityWorld } from './city/cityRenderer';
 import type { CityWorld } from './city/cityTypes';
+import { buildRealmWorld } from './realms/realmBuilder';
+import { solidAt, stepRealmWorld } from './realms/realmPhysics';
+import { drawRealmWorld } from './realms/realmRenderer';
+import { REALM_METAS, type RealmWorld } from './realms/realmTypes';
 
 const FIXED_DT = 1 / 60;
+
+const REALM_BGM = ['exp_overworld', 'exp_overworld', 'dim_core'] as const;
+
+// Piloto automático del título para Reinos Abiertos: recorre Raíces Hondas
+// saltando obstáculos y taladrando cuando se atasca.
+function computeRealmAttractInput(w: RealmWorld): InputState {
+  const p = w.player;
+  const ts = w.tileSize;
+  const aheadC = Math.floor((p.x + p.w / 2) / ts) + 1;
+  const footR = Math.floor((p.y + p.h - 2) / ts);
+  const wall = solidAt(w, aheadC, footR) || solidAt(w, aheadC, footR - 1);
+  const stuck = Math.abs(p.vx) < 0.3 && p.onGround;
+  return {
+    left: false,
+    right: true,
+    up: false,
+    down: false,
+    run: true,
+    jump: (wall || w.frame % 70 < 14) && w.frame % 6 !== 0,
+    fire: stuck && w.frame % 3 === 0,
+    spin: false,
+  };
+}
 
 function createAttractWorld(partition: GamePartition, prog: SaveProgress): WorldState {
   const isSmw = partition === 'smw';
@@ -186,6 +213,10 @@ export const GameView: React.FC = () => {
   const cityWorldRef = useRef<CityWorld | null>(null);
   const cityDrivingRef = useRef(false);
   const [cityDriving, setCityDriving] = useState(false);
+  const realmWorldRef = useRef<RealmWorld | null>(null);
+  const titleRealmRef = useRef<RealmWorld | null>(null);
+  const realmAdvanceRef = useRef<() => void>(() => {});
+  const [realmIdx, setRealmIdx] = useState(0);
   const renderer = useMemo(() => new SkiaWorldRenderer(), []);
   const framePicture = useSharedValue(createPicture(() => {}));
 
@@ -321,11 +352,28 @@ export const GameView: React.FC = () => {
           accumulator -= FIXED_DT;
           steps += 1;
 
-          if (inTitleRef.current) {
+          if (inTitleRef.current && partitionRef.current === 'realms') {
+            if (!titleRealmRef.current) titleRealmRef.current = buildRealmWorld(0);
+            const tw = titleRealmRef.current;
+            stepRealmWorld(tw, computeRealmAttractInput(tw), viewportWorldW, LOGICAL_HEIGHT);
+            if (tw.player.x > (tw.cols - 12) * tw.tileSize || tw.frame > 60 * 90) {
+              titleRealmRef.current = buildRealmWorld(0);
+            }
+          } else if (inTitleRef.current) {
             const demoInput = computeAttractInput(world);
             stepWorld(world, demoInput, viewportWorldW);
             if (world.status !== 'playing' || world.player.x > (world.totalCols - 22) * TILE) {
               worldRef.current = createAttractWorld(partitionRef.current, progressRef.current);
+            }
+          } else if (partitionRef.current === 'realms' && realmWorldRef.current) {
+            const rw = realmWorldRef.current;
+            const events = stepRealmWorld(rw, inputRef.current, viewportWorldW, LOGICAL_HEIGHT);
+            if (events.length > 0) {
+              handleEvents(events, false);
+            }
+            if (rw.requestNext) {
+              rw.requestNext = false;
+              realmAdvanceRef.current();
             }
           } else if (partitionRef.current === 'city_chaos' && cityWorldRef.current) {
             const events = stepCityWorld(
@@ -347,7 +395,25 @@ export const GameView: React.FC = () => {
       }
 
       // Record GPU SkPicture with zero React component re-renders!
-      if (!inTitleRef.current && partitionRef.current === 'city_chaos' && cityWorldRef.current) {
+      const realmToDraw = inTitleRef.current
+        ? partitionRef.current === 'realms'
+          ? titleRealmRef.current
+          : null
+        : partitionRef.current === 'realms'
+        ? realmWorldRef.current
+        : null;
+      if (realmToDraw) {
+        const showHud = !inTitleRef.current;
+        framePicture.value = createPicture(
+          (canvas) => {
+            canvas.save();
+            canvas.scale(scale, scale);
+            drawRealmWorld(canvas, realmToDraw, viewportWorldW, LOGICAL_HEIGHT, skiaPixelFont, { hud: showHud });
+            canvas.restore();
+          },
+          { width, height }
+        );
+      } else if (!inTitleRef.current && partitionRef.current === 'city_chaos' && cityWorldRef.current) {
         const cw = cityWorldRef.current;
         framePicture.value = createPicture(
           (canvas) => {
@@ -533,13 +599,19 @@ export const GameView: React.FC = () => {
       activePart
     );
     const isCity = activePart === 'city_chaos';
+    const isRealm = activePart === 'realms';
     if (isCity) {
       cityWorldRef.current = buildCityWorld();
       cityDrivingRef.current = false;
       setCityDriving(false);
     }
-    fresh.status = isCity ? 'playing' : 'stage_intro';
-    fresh.statusTimer = isCity ? 0 : 78;
+    if (isRealm) {
+      realmWorldRef.current = buildRealmWorld(levelIndex);
+      setRealmIdx(realmWorldRef.current.levelIndex);
+    }
+    const directPlay = isCity || isRealm;
+    fresh.status = directPlay ? 'playing' : 'stage_intro';
+    fresh.statusTimer = directPlay ? 0 : 78;
     worldRef.current = fresh;
     inTitleRef.current = false;
     pausedRef.current = false;
@@ -554,8 +626,27 @@ export const GameView: React.FC = () => {
       stageTitle: fresh.stageTitle,
     }));
     soundManager.setPaused(false);
-    soundManager.playBgm(isCity ? 'dim_theme' : null);
+    soundManager.playBgm(
+      isCity ? 'dim_theme' : isRealm ? REALM_BGM[Math.max(0, Math.min(2, levelIndex))] : null
+    );
   }, []);
+
+  // Tras restaurar un reino se abre el siguiente; al terminar el tercero, vuelve al título
+  useEffect(() => {
+    realmAdvanceRef.current = () => {
+      const cur = realmWorldRef.current;
+      if (!cur) return;
+      if (cur.levelIndex < REALM_METAS.length - 1) {
+        launchStage(cur.levelIndex + 1, 'realms');
+      } else {
+        soundManager.playBgm(null);
+        inTitleRef.current = true;
+        realmWorldRef.current = null;
+        worldRef.current = createAttractWorld('realms', progressRef.current);
+        setInTitle(true);
+      }
+    };
+  }, [launchStage]);
 
   const handleUpdateSettings = useCallback((patch: Partial<GameSettings>) => {
     haptics.trigger('tick');
@@ -590,6 +681,9 @@ export const GameView: React.FC = () => {
       cityDrivingRef.current = false;
       setCityDriving(false);
     }
+    if (activePart === 'realms') {
+      realmWorldRef.current = buildRealmWorld(idx);
+    }
     const fresh = buildWorldState(
       idx,
       {
@@ -611,7 +705,11 @@ export const GameView: React.FC = () => {
     setModalMode('none');
     setUiStatus('playing');
     soundManager.setPaused(false);
-    soundManager.playBgm(BIOMES[fresh.biomeId].bgm);
+    soundManager.playBgm(
+      activePart === 'realms'
+        ? REALM_BGM[Math.max(0, Math.min(2, idx))]
+        : BIOMES[fresh.biomeId].bgm
+    );
   }, []);
 
   const handleExitToTitle = useCallback(() => {
@@ -691,7 +789,7 @@ export const GameView: React.FC = () => {
       </Canvas>
 
       {/* Active Gameplay HUD & Corner-Tucked Multi-Touch Controller */}
-      {!inTitle && partition !== 'city_chaos' && (
+      {!inTitle && partition !== 'city_chaos' && partition !== 'realms' && (
         <HudOverlay
           hud={hud}
           pixelFontLoaded={fontsLoaded}
@@ -699,11 +797,15 @@ export const GameView: React.FC = () => {
         />
       )}
 
-      {!inTitle && partition === 'city_chaos' && (
+      {!inTitle && (partition === 'city_chaos' || partition === 'realms') && (
         <Pressable
           onPress={handleOpenPause}
           hitSlop={12}
-          style={({ pressed }) => [styles.cityPauseBtn, pressed && styles.cityPauseBtnPressed]}
+          style={({ pressed }) => [
+            styles.cityPauseBtn,
+            partition === 'realms' && styles.realmPauseBtn,
+            pressed && styles.cityPauseBtnPressed,
+          ]}
         >
           <Text style={styles.cityPauseText}>⏸</Text>
         </Pressable>
@@ -718,6 +820,15 @@ export const GameView: React.FC = () => {
         visible={showControls}
         odysseyMode={hud.odysseyMode}
         cityMode={partition === 'city_chaos' ? (cityDriving ? 'driving' : 'foot') : null}
+        realmLabels={
+          partition === 'realms'
+            ? {
+                x: REALM_METAS[Math.max(0, Math.min(2, realmIdx))].toolX,
+                y: REALM_METAS[Math.max(0, Math.min(2, realmIdx))].toolY,
+                a: realmIdx === 1 ? 'PLANEO' : realmIdx === 2 ? 'NADAR' : 'SALTAR',
+              }
+            : null
+        }
       />
 
       {/* Dual-Cartridge Title Screen over Live Attract-Mode Demo */}
@@ -730,6 +841,7 @@ export const GameView: React.FC = () => {
           onStartAdventure={() => launchStage(0, partition)}
           onContinue={() => launchStage(continueLevelIdx, partition)}
           onQuickLaunchCityChaos={() => launchStage(0, 'city_chaos')}
+          onQuickLaunchRealms={() => launchStage(0, 'realms')}
           onOpenWorldSelect={() => {
             haptics.trigger('light');
             setWorldSelectOpen(true);
@@ -832,6 +944,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 35,
+  },
+  realmPauseBtn: {
+    left: 12,
+    borderColor: '#10b981',
   },
   cityPauseBtnPressed: {
     transform: [{ scale: 0.92 }],

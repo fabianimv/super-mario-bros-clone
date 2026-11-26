@@ -207,6 +207,26 @@ export function buildWorldState(
   if (partition === 'odyssey') {
     return buildOdysseyStage(levelIndex, carryState);
   }
+  if (partition === 'realms') {
+    // El reino real vive en src/realms; este estado solo alimenta la HUD/overlays
+    const base = buildOdysseyStage(0, carryState);
+    const codes = ['R-1', 'R-2', 'R-3'];
+    const names = ['RAÍCES HONDAS', 'ARCHIPIÉLAGO TINTA', 'FOSA MAGNÉTICA'];
+    const idx = Math.max(0, Math.min(2, levelIndex));
+    return {
+      ...base,
+      partition: 'realms',
+      totalStagesInPartition: 3,
+      levelIndex: idx,
+      worldLabel: codes[idx],
+      stageTitle: names[idx],
+      objective: 'reach',
+      brawlTargetsTotal: 0,
+      brawlTargetsDefeated: 0,
+      gemsNeeded: 0,
+      gemsCollected: 0,
+    };
+  }
   if (partition === 'city_chaos') {
     const base = buildOdysseyStage(0, carryState);
     return {

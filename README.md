@@ -64,6 +64,18 @@ Cuarto modo con **arte 3D low-poly** (three.js sobre `expo-gl`): bloques con vol
 
 Si el 3D no puede iniciar en un equipo, el modo se juega automáticamente con el renderer 2D; los otros modos no dependen del 3D.
 
+### 🌍 Modo Reinos Abiertos (nuevo, motor propio)
+
+Es el modo destacado del título. Tiene su propio motor (`src/realms/`) con **3 mundos abiertos enormes** (240–260 columnas × 70–90 filas) que se recorren libremente en las cuatro direcciones, con cámara libre, mapa con niebla de guerra, santuarios con viaje rápido y mejoras que abren zonas nuevas.
+
+| Reino | Herramienta (X) | Acción (Y) | Mecánicas nuevas |
+|---|---|---|---|
+| **R-1 • Raíces Hondas** | Taladro: excava tierra, mineral y cristal (con el *Taladro de Diamante* también la piedra) | Plantar semilla: crece una enredadera trepable; desde su punta puedes plantar otra | Terreno 100 % destructible, ciclo día/noche (de noche aparecen plataformas de luciérnagas y sombras cazadoras; de día los girasoles te impulsan), oscuridad con linterna bajo tierra |
+| **R-2 • Archipiélago Tinta** | Pintar: lanzas tinta que cubre las superficies | Cambiar color | **Azul** rebota, **naranja** te hace correr al doble, **verde** te pega a paredes y techos. Planeo manteniendo A, corrientes ascendentes, mar de tinta y borradores que limpian tu pintura. Los 6 objetivos son faros que se encienden con su color |
+| **R-3 • Fosa Magnética** | Pulso magnético (daño en área) | Invertir polaridad (rojo/azul) | Los polos opuestos te atraen y te cuelgan de techos y paredes imantadas; los iguales te lanzan por los aires. Nado libre con oxígeno, columnas de burbujas, fosa abisal y tanque de O₂ |
+
+**Comunes a los tres:** 6 fragmentos por reino abren el portal del santuario inicial; ▲ sobre un santuario viaja al siguiente; mantener **Y** te devuelve al último santuario; al morir reapareces en el santuario (sin *game over*) perdiendo parte de los orbes. Al restaurar un reino se abre el siguiente automáticamente. En el título, un piloto automático recorre Raíces Hondas de fondo.
+
 ### Habilidades del plomero
 
 - **Llave inglesa (`X` sin flor ni capa; en el modo clásico también `Y`):** se lanza como bumerán y vuelve a tu mano. Derriba enemigos, golpea bloques, junta monedas y trae de vuelta gemas, relojes o llaves que estén lejos. Al jefe le quita 1 de vida por lanzamiento.
@@ -94,6 +106,6 @@ Si el 3D no puede iniciar en un equipo, el modo se juega automáticamente con el
 # Chequeo estricto de tipos TypeScript
 npm run typecheck
 
-# Suite automatizada: valida los 171 sprites del atlas, los 24 niveles, física 60Hz y audio WAV
+# Suite automatizada: sprites, niveles, física 60 Hz, audio WAV y rutas de los 3 Reinos Abiertos
 npm run verify
 ```

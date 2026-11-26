@@ -7,7 +7,7 @@ import { partitionTotalLevels } from './biomes';
 import type { GamePartition, SaveProgress } from './types';
 
 export const PARTITION_ORDER: GamePartition[] = ['classic', 'smw', 'expedition', 'frontier', 'fortune', 'mirage', 'echo', 'dimension'];
-export const NONLINEAR_PARTITIONS: GamePartition[] = ['city_chaos', 'odyssey', 'tower', 'flip', 'star_road'];
+export const NONLINEAR_PARTITIONS: GamePartition[] = ['realms', 'city_chaos', 'odyssey', 'tower', 'flip', 'star_road'];
 export const ALL_PARTITIONS: GamePartition[] = [...PARTITION_ORDER, ...NONLINEAR_PARTITIONS];
 
 export interface PartitionInfo {
@@ -183,6 +183,19 @@ export const PARTITION_INFO: Record<GamePartition, PartitionInfo> = {
     accent: '#06b6d4',
     subtitleColor: '#a5f3fc',
   },
+  realms: {
+    title: 'REINOS ABIERTOS',
+    chip: '🌍 REINOS',
+    tab: '🌍 REINOS ABIERTOS',
+    edition: 'NUEVO • 3 MUNDOS ABIERTOS • MOTOR PROPIO',
+    subtitle: 'REINOS ABIERTOS',
+    worldsLabel: '3 REINOS',
+    worldNoun: 'REINO',
+    firstStage: 'R-1',
+    hint: 'Explora libre en todas direcciones • X herramienta • Y acción • ▲ en santuario: viaje rápido • Mantén Y: volver',
+    accent: '#10b981',
+    subtitleColor: '#a7f3d0',
+  },
   city_chaos: {
     title: 'CIUDAD CAOS',
     chip: '🏎️ CIUDAD CAOS',
@@ -313,6 +326,15 @@ export function getPartitionProgress(prog: SaveProgress, part: GamePartition): P
       total,
     };
   }
+  if (part === 'realms') {
+    return {
+      highScore: prog.realmsHighScore ?? 0,
+      unlocked: unlockLevel(prog.realmsUnlockedLevel),
+      cleared: prog.realmsClearedLevels ?? [],
+      best: prog.realmsBestStageScores ?? {},
+      total,
+    };
+  }
   if (part === 'city_chaos') {
     return {
       highScore: prog.cityChaosHighScore ?? 0,
@@ -433,6 +455,15 @@ export function withPartitionProgress(
       odysseyUnlockedLevel: next.unlocked,
       odysseyClearedLevels: next.cleared,
       odysseyBestStageScores: next.best,
+    };
+  }
+  if (part === 'realms') {
+    return {
+      ...prog,
+      realmsHighScore: next.highScore,
+      realmsUnlockedLevel: next.unlocked,
+      realmsClearedLevels: next.cleared,
+      realmsBestStageScores: next.best,
     };
   }
   if (part === 'city_chaos') {

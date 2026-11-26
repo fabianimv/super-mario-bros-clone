@@ -15,6 +15,7 @@ interface Props {
   onOpenWorldSelect: () => void;
   onOpenSettings: () => void;
   onQuickLaunchCityChaos?: () => void;
+  onQuickLaunchRealms?: () => void;
 }
 
 export const TitleScreen: React.FC<Props> = ({
@@ -27,6 +28,7 @@ export const TitleScreen: React.FC<Props> = ({
   onOpenWorldSelect,
   onOpenSettings,
   onQuickLaunchCityChaos,
+  onQuickLaunchRealms,
 }) => {
   const insets = useSafeAreaInsets();
   const fontFamily = pixelFontLoaded ? 'PressStart2P_400Regular' : undefined;
@@ -37,7 +39,8 @@ export const TitleScreen: React.FC<Props> = ({
   const clearedCount = pp.cleared.length;
   const highScore = pp.highScore;
   const totalCount = pp.total;
-  const hasSavedStage = unlockedIdx > 0;
+  const isRealms = partition === 'realms';
+  const hasSavedStage = unlockedIdx > 0 && !isRealms;
   const basePartitions: GamePartition[] = ['classic', 'smw', 'expedition', 'dimension'];
   const newPartitions = PARTITION_ORDER.filter((part) => !basePartitions.includes(part));
 
@@ -112,6 +115,7 @@ export const TitleScreen: React.FC<Props> = ({
           {NONLINEAR_PARTITIONS.map((part) => {
             const active = part === partition;
             const isCity = part === 'city_chaos';
+            const isRealmTab = part === 'realms';
             return (
               <Pressable
                 key={part}
@@ -120,6 +124,7 @@ export const TitleScreen: React.FC<Props> = ({
                   styles.partitionTab,
                   styles.partitionTabNonlinear,
                   isCity && styles.partitionTabCityChaos,
+                  isRealmTab && styles.partitionTabRealms,
                   active && { backgroundColor: PARTITION_INFO[part].accent },
                   active && styles.partitionTabNonlinearActive,
                 ]}
@@ -129,6 +134,7 @@ export const TitleScreen: React.FC<Props> = ({
                     styles.partitionTabText,
                     styles.partitionTabTextNonlinear,
                     isCity && styles.partitionTabTextCityChaos,
+                    isRealmTab && styles.partitionTabTextRealms,
                     { fontFamily },
                     active && styles.partitionTabTextActive,
                   ]}
@@ -153,6 +159,7 @@ export const TitleScreen: React.FC<Props> = ({
           partition === 'star_road' && styles.signBoardStarRoad,
           partition === 'odyssey' && styles.signBoardOdyssey,
           partition === 'city_chaos' && styles.signBoardCityChaos,
+          isRealms && styles.signBoardRealms,
         ]}
       >
         <View style={styles.rivetRow}>
@@ -196,31 +203,37 @@ export const TitleScreen: React.FC<Props> = ({
         <Pressable
           onPress={onStartAdventure}
           style={({ pressed }) => [
-            partition === 'city_chaos' ? styles.btnPrimaryCrimson : styles.btnPrimaryGold,
+            partition === 'city_chaos'
+              ? styles.btnPrimaryCrimson
+              : isRealms
+              ? styles.btnPrimaryEmerald
+              : styles.btnPrimaryGold,
             pressed && styles.btnPressed,
           ]}
         >
           <Text
             style={[
-              partition === 'city_chaos' ? styles.btnPrimaryText : styles.btnDarkText,
+              partition === 'city_chaos' || isRealms ? styles.btnPrimaryText : styles.btnDarkText,
               { fontFamily },
             ]}
           >
             {partition === 'city_chaos'
               ? '🏎️ ▶ JUGAR CIUDAD CAOS'
+              : isRealms
+              ? '🌍 ▶ EXPLORAR R-1'
               : hasSavedStage
               ? 'NUEVA PARTIDA'
               : `▶ JUGAR ${info.firstStage}`}
           </Text>
         </Pressable>
 
-        {partition !== 'city_chaos' && onQuickLaunchCityChaos && (
+        {!isRealms && onQuickLaunchRealms && (
           <Pressable
-            onPress={onQuickLaunchCityChaos}
-            style={({ pressed }) => [styles.btnPrimaryCrimson, pressed && styles.btnPressed]}
+            onPress={onQuickLaunchRealms}
+            style={({ pressed }) => [styles.btnPrimaryEmerald, pressed && styles.btnPressed]}
           >
             <Text style={[styles.btnPrimaryText, { fontFamily }]}>
-              🏎️ CIUDAD CAOS
+              🌍 REINOS ABIERTOS
             </Text>
           </Pressable>
         )}
@@ -361,6 +374,18 @@ const styles = StyleSheet.create({
   signBoardOdyssey: {
     backgroundColor: '#083344',
     borderColor: '#22d3ee',
+  },
+  signBoardRealms: {
+    backgroundColor: '#064e3b',
+    borderColor: '#34d399',
+  },
+  partitionTabRealms: {
+    borderWidth: 2,
+    borderColor: '#34d399',
+    backgroundColor: 'rgba(6, 78, 59, 0.6)',
+  },
+  partitionTabTextRealms: {
+    color: '#d1fae5',
   },
   signBoardCityChaos: {
     backgroundColor: '#881337',

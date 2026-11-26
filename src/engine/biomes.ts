@@ -200,6 +200,16 @@ export const CITY_CHAOS_METAS: StageMeta[] = [
   },
 ];
 
+// Reinos Abiertos: motor propio (src/realms), 3 mundos abiertos gigantes
+export const REALMS_WORLDS = 1;
+export const REALMS_TOTAL_LEVELS = 3;
+export const REALMS_STAGE_CODES = ['R-1', 'R-2', 'R-3'];
+export const REALMS_METAS: StageMeta[] = [
+  { code: 'R-1', name: 'RAÍCES HONDAS', biome: 'jungle', bgm: 'exp_overworld', isBoss: false },
+  { code: 'R-2', name: 'ARCHIPIÉLAGO TINTA', biome: 'cloudland', bgm: 'exp_overworld', isBoss: false },
+  { code: 'R-3', name: 'FOSA MAGNÉTICA', biome: 'reef', bgm: 'dim_core', isBoss: false },
+];
+
 /** Cantidad de niveles de cada modo. */
 export function partitionTotalLevels(partition: GamePartition): number {
   switch (partition) {
@@ -227,6 +237,8 @@ export function partitionTotalLevels(partition: GamePartition): number {
       return ODYSSEY_TOTAL_LEVELS;
     case 'city_chaos':
       return CITY_CHAOS_TOTAL_LEVELS;
+    case 'realms':
+      return REALMS_TOTAL_LEVELS;
     default:
       return TOTAL_LEVELS;
   }
@@ -1088,6 +1100,9 @@ export function getWorldLabel(levelIndex: number, partition: GamePartition = 'cl
   if (partition === 'city_chaos') {
     return 'C-1';
   }
+  if (partition === 'realms') {
+    return REALMS_STAGE_CODES[Math.max(0, Math.min(REALMS_STAGE_CODES.length - 1, levelIndex))];
+  }
   return `${worldNum}-${stageNum}`;
 }
 
@@ -1098,6 +1113,9 @@ export function getStageMeta(levelIndex: number, partition: GamePartition = 'cla
   }
   if (partition === 'city_chaos') {
     return CITY_CHAOS_METAS[0];
+  }
+  if (partition === 'realms') {
+    return REALMS_METAS[Math.max(0, Math.min(REALMS_METAS.length - 1, levelIndex))];
   }
   const code = getWorldLabel(levelIndex, partition);
   const biome = getStageBiome(levelIndex, partition);
@@ -1119,6 +1137,9 @@ export function getStageBiome(levelIndex: number, partition: GamePartition = 'cl
 
   if (partition === 'city_chaos') {
     return 'starfield';
+  }
+  if (partition === 'realms') {
+    return REALMS_METAS[Math.max(0, Math.min(REALMS_METAS.length - 1, levelIndex))].biome;
   }
 
   if (partition === 'odyssey') {

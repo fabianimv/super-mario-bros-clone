@@ -20,6 +20,8 @@ interface Props {
   visible: boolean;
   odysseyMode?: 'citadel_grapple' | 'chrono_canyon' | 'titan_crater';
   cityMode?: 'foot' | 'driving' | null;
+  /** Reinos Abiertos: etiquetas propias y botones sin combinaciones automáticas. */
+  realmLabels?: { a: string; x: string; y: string } | null;
 }
 
 interface VisualPressed {
@@ -53,7 +55,10 @@ export const ArcadeTouchControls: React.FC<Props> = ({
   visible,
   odysseyMode,
   cityMode,
+  realmLabels,
 }) => {
+  // Botones "puros": cada botón envía solo su acción (modos con motor propio)
+  const pure = cityMode != null || realmLabels != null;
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [pressed, setPressed] = useState<VisualPressed>(EMPTY_VISUAL);
@@ -156,15 +161,15 @@ export const ArcadeTouchControls: React.FC<Props> = ({
       if (e.code === 'Space' || e.code === 'KeyK') kb.jump = true;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyZ' || e.code === 'KeyJ') {
         kb.run = true;
-        if (!cityMode) kb.fire = true;
+        if (!pure) kb.fire = true;
       }
       if (e.code === 'KeyX') {
         kb.fire = true;
-        if (!cityMode) kb.run = true;
+        if (!pure) kb.run = true;
       }
       if (e.code === 'KeyC' || e.code === 'KeyE') {
         kb.spin = true;
-        if (!cityMode) kb.run = true;
+        if (!pure) kb.run = true;
       }
       syncMergedInput(prevVisualRef.current);
     };
@@ -178,15 +183,15 @@ export const ArcadeTouchControls: React.FC<Props> = ({
       if (e.code === 'Space' || e.code === 'KeyK') kb.jump = false;
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyZ' || e.code === 'KeyJ') {
         kb.run = false;
-        if (!cityMode) kb.fire = false;
+        if (!pure) kb.fire = false;
       }
       if (e.code === 'KeyX') {
         kb.fire = false;
-        if (!cityMode) kb.run = false;
+        if (!pure) kb.run = false;
       }
       if (e.code === 'KeyC' || e.code === 'KeyE') {
         kb.spin = false;
-        if (!cityMode) kb.run = false;
+        if (!pure) kb.run = false;
       }
       syncMergedInput(prevVisualRef.current);
     };
@@ -197,7 +202,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [cityMode, syncMergedInput]);
+  }, [pure, syncMergedInput]);
 
   useEffect(() => {
     if (!visible) {
@@ -247,8 +252,8 @@ export const ArcadeTouchControls: React.FC<Props> = ({
             if (dx < -deadzone) next.left = true;
             else if (dx > deadzone) next.right = true;
 
-            const vertRatio = cityMode ? 0.42 : 0.68;
-            const vertDeadzone = cityMode ? deadzone : deadzone * 1.35;
+            const vertRatio = pure ? 0.42 : 0.68;
+            const vertDeadzone = pure ? deadzone : deadzone * 1.35;
             if (dy > vertDeadzone && Math.abs(dy) > Math.abs(dx) * vertRatio) {
               next.down = true;
             } else if (dy < -vertDeadzone && Math.abs(dy) > Math.abs(dx) * vertRatio) {
@@ -269,19 +274,19 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         }
         if (distRun <= actionHalo) {
           next.run = true;
-          if (!cityMode && !mountedYoshi && powerState === 2) {
+          if (!pure && !mountedYoshi && powerState === 2) {
             next.fire = true;
           }
         }
         if (distFire <= auxHalo) {
           next.fire = true;
-          if (!cityMode) {
+          if (!pure) {
             next.run = true;
           }
         }
         if (distSpin <= auxHalo) {
           next.spin = true;
-          if (!cityMode) {
+          if (!pure) {
             next.run = true;
             if (partition !== 'smw' && partition !== 'flip') {
               next.fire = true;
@@ -295,7 +300,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
     [
       auxRadius,
       btnRadius,
-      cityMode,
+      pure,
       controlScale,
       dpadCenterX,
       dpadCenterY,
@@ -321,8 +326,9 @@ export const ArcadeTouchControls: React.FC<Props> = ({
   const armThick = Math.round(36 * controlScale);
   const armLen = Math.round((dpadSize - armThick) / 2 - 5);
 
-  const aLabel =
-    cityMode === 'driving'
+  const aLabel = realmLabels
+    ? realmLabels.a
+    : cityMode === 'driving'
       ? 'NITRO'
       : cityMode === 'foot'
       ? 'DASH'
@@ -334,8 +340,9 @@ export const ArcadeTouchControls: React.FC<Props> = ({
 
   const bLabel = cityMode === 'driving' ? 'DRIFT' : 'CORRER';
 
-  const xLabel =
-    cityMode === 'driving'
+  const xLabel = realmLabels
+    ? realmLabels.x
+    : cityMode === 'driving'
       ? 'CAÑÓN'
       : cityMode === 'foot'
       ? 'ARMA'
@@ -345,8 +352,9 @@ export const ArcadeTouchControls: React.FC<Props> = ({
       ? 'PLASMA'
       : 'COMBO';
 
-  const yLabel =
-    cityMode === 'driving'
+  const yLabel = realmLabels
+    ? realmLabels.y
+    : cityMode === 'driving'
       ? 'BAJAR'
       : cityMode === 'foot'
       ? 'AUTO'
@@ -459,7 +467,9 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         pointerEvents="none"
         style={[
           styles.spinBtn,
-          cityMode === 'driving'
+          realmLabels
+            ? styles.spinBtnGrapple
+            : cityMode === 'driving'
             ? styles.spinBtnTitan
             : cityMode === 'foot'
             ? styles.spinBtnGrapple
@@ -493,7 +503,7 @@ export const ArcadeTouchControls: React.FC<Props> = ({
         pointerEvents="none"
         style={[
           styles.fireBtn,
-          odysseyMode === 'titan_crater' || cityMode != null
+          odysseyMode === 'titan_crater' || pure
             ? styles.fireBtnPlasma
             : styles.fireBtnArmed,
           pressed.fire && styles.btnDepressed,

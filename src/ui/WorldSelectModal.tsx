@@ -83,11 +83,12 @@ export const WorldSelectModal: React.FC<Props> = ({
   const isStarRoad = partition === 'star_road';
   const isOdyssey = partition === 'odyssey';
   const isCityChaos = partition === 'city_chaos';
+  const isRealms = partition === 'realms';
 
   const basePartitions: GamePartition[] = ['classic', 'smw', 'expedition', 'dimension'];
   const newPartitions = PARTITION_ORDER.filter((part) => !basePartitions.includes(part));
 
-  const worldCount = isCityChaos
+  const worldCount = isCityChaos || isRealms
     ? 1
     : isOdyssey
     ? 1
@@ -112,7 +113,9 @@ export const WorldSelectModal: React.FC<Props> = ({
     : isStarRoad
     ? STAR_ROAD_WORLDS
     : TOTAL_WORLDS;
-  const worldNames = isCityChaos
+  const worldNames = isRealms
+    ? ['R • REINOS ABIERTOS • RAÍCES / TINTA / IMANES']
+    : isCityChaos
     ? ['C • CIUDAD CAOS • 6 DISTRITOS GTA 2D']
     : isOdyssey
     ? ['O • ODISEA ABIERTA • 3 MUNDOS GIGANTES']
@@ -263,14 +266,14 @@ export const WorldSelectModal: React.FC<Props> = ({
         >
           {Array.from({ length: worldCount }, (_, wIdx) => {
             const worldStart = wIdx * STAGES_PER_WORLD;
-            const stageCount = isCityChaos ? 1 : isOdyssey ? 3 : STAGES_PER_WORLD;
+            const stageCount = isCityChaos ? 1 : isOdyssey || isRealms ? 3 : STAGES_PER_WORLD;
             const primaryBiome = BIOMES[getStageBiome(worldStart, partition)];
             return (
               <View
                 key={`${partition}_${wIdx}`}
                 style={[
                   styles.worldCard,
-                  (isCityChaos || isOdyssey) && { width: '100%' },
+                  (isCityChaos || isOdyssey || isRealms) && { width: '100%' },
                   isFrontier && styles.worldCardFrontier,
                   isTower && styles.worldCardTower,
                   isFlip && styles.worldCardFlip,
@@ -294,7 +297,7 @@ export const WorldSelectModal: React.FC<Props> = ({
                     const levelIdx = worldStart + sIdx;
                     const unlocked = freePlay || levelIdx <= unlockedIdx;
                     const cleared = clearedList.includes(levelIdx);
-                    const isBoss = isOdyssey ? sIdx === 2 : sIdx === 3;
+                    const isBoss = isRealms ? false : isOdyssey ? sIdx === 2 : sIdx === 3;
 
                     return (
                       <Pressable

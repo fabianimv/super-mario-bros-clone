@@ -73,6 +73,7 @@ export const PauseModal: React.FC<PauseProps> = ({
           partition === 'star_road' && { borderColor: '#eab308' },
           partition === 'odyssey' && { borderColor: '#06b6d4' },
           partition === 'city_chaos' && { borderColor: '#f43f5e' },
+          partition === 'realms' && { borderColor: '#34d399' },
         ]}
       >
         <Text style={[styles.title, { fontFamily }]}>
@@ -101,6 +102,8 @@ export const PauseModal: React.FC<PauseProps> = ({
               ? 'PAUSA • ODISEA ABIERTA'
               : partition === 'city_chaos'
               ? 'PAUSA • CIUDAD CAOS'
+              : partition === 'realms'
+              ? 'PAUSA • REINOS ABIERTOS'
               : 'PAUSA • PLOMERO BROS'
             : 'AJUSTES ARCADE'}
         </Text>
