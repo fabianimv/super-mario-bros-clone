@@ -40,3 +40,6 @@ yarn-error.*
 /ios
 /android
 /preview
+
+# Salida de compilación de npm run verify (cada checkout usa la suya)
+.verify-build/
